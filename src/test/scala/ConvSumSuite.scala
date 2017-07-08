@@ -5,6 +5,7 @@ import chisel3._
 import chisel3.iotesters.{PeekPokeTester, Driver, ChiselFlatSpec}
 import scala.util.Random
 import binconcifar.{TriConvCompute, ParallelTriConvSum}
+import scala.collection.mutable.ArrayBuffer
 
 class ConvSumTests( c : TriConvCompute, weights : List[List[List[List[Int]]]] )
  extends PeekPokeTester( c ) {
@@ -41,25 +42,30 @@ class ConvSumTests( c : TriConvCompute, weights : List[List[List[List[Int]]]] )
     })
   })
 
+  val chosenOutput = ArrayBuffer[List[BigInt]]()
+  val vldCheck = ArrayBuffer[Boolean]()
   var inputPtr = 0
   var outputPtr = 0
   for ( cyc <- 0 until cycs ) {
-    val vld = myRand.nextInt(2) == 0
+    val vld = myRand.nextInt(2) != 0
+    vldCheck += vld
     poke( c.io.dataIn.valid, vld )
-    for ( dataIn1 <- c.io.dataIn.bits(0).zip( img(inputPtr) ) ) {
+    for ( dataIn1 <- c.io.dataIn.bits(0).zip( img(cyc) ) ) {
       for ( dataIn2 <- dataIn1._1.zip( dataIn1._2 ) ) {
         for ( i <- 0 until dataIn2._2.size )
           poke( dataIn2._1(i), dataIn2._2(i) )
       }
     }
     if ( vld )
-      inputPtr += 1
+      chosenOutput += convRes(cyc).toList
     step( 1 )
-    val outVld = peek( c.io.dataOut.valid ) == 1
-    if ( outVld ) {
-      for ( i <- 0 until convRes( outputPtr ).size )
-        expect( c.io.dataOut.bits(i), convRes( outputPtr )(i) )
-      outputPtr += 1
+    if ( cyc >= c.latency - 1 ) {
+      expect( c.io.dataOut.valid, vldCheck( cyc - c.latency + 1 ) )
+      if ( vldCheck( cyc - c.latency + 1 ) ) {
+        for ( i <- 0 until chosenOutput( outputPtr ).size )
+          expect( c.io.dataOut.bits(i), chosenOutput( outputPtr )(i) )
+        outputPtr += 1
+      }
     }
   }
 }
