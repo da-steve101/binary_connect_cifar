@@ -7,7 +7,7 @@ import scala.util.Random
 import binconcifar.MemShiftRegister
 import scala.collection.mutable.ArrayBuffer
 
-class UserMod( val n : Int ) extends Module {
+class MemUserMod( val n : Int ) extends Module {
   val io = IO(new Bundle {
     val in = Input( UInt( 16.W ) )
     val en = Input( Bool() )
@@ -18,7 +18,7 @@ class UserMod( val n : Int ) extends Module {
   io.out := memSr
 }
 
-class MemShiftRegisterTests( c : UserMod ) extends PeekPokeTester( c ) {
+class MemShiftRegisterTests( c : MemUserMod ) extends PeekPokeTester( c ) {
   val inputs = ArrayBuffer[BigInt]()
   val myRand = new Random
   val cycles = 3*( c.n + 10 )
@@ -44,7 +44,7 @@ class MemShiftRegisterSuite extends ChiselFlatSpec {
     it should s"correctly shift values using a memory $backend" in {
       for ( n <- List(1, 2, 3, 5, 25, 73) ) {
         Driver(() => {
-          new UserMod( n )
+          new MemUserMod( n )
         }, backend )( c => new MemShiftRegisterTests( c ) ) should be (true)
       }
     }

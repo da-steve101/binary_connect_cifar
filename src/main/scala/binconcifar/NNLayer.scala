@@ -21,8 +21,8 @@ abstract class NNLayer( val throughput : Double, inSize : Int, outSize : Int ) e
   val noIn = ( inSize * throughput ).toInt
 
   val io = IO(new Bundle {
-    val dataIn = Decoupled( Vec( noIn, dtype ) ).flip()
-    val dataOut = Valid( Vec( noOut, dtype ) )
+    val dataIn = Flipped(Decoupled( Vec( noIn, dtype ) ))
+    val dataOut = Decoupled( Vec( noOut, dtype ) )
   })
 
   def latency : Int
