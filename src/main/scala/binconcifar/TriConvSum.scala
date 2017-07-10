@@ -6,13 +6,12 @@ import chisel3._
 import chisel3.util._
 import scala.collection.mutable.ArrayBuffer
 
-/* take in 1, 0, -1 weights
- * perform the convolution on them
- */
-class ParallelTriConvSum( weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) extends
-    TriConvCompute( tput, ( weights.size, weights(0).size, weights(0)(0).size, weights(0)(0)(0).size ) )  {
+private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[Seq[Seq[Seq[Int]]]] ) extends Module {
 
-  io.dataIn.ready := true.B
+  val io = IO( new Bundle {
+    val dataIn = Input(Vec( weights(0).size, Vec( weights(0)(0).size, Vec( weights(0)(0)(0).size, dtype ))))
+    val dataOut = Output(Vec( weights.size, dtype ))
+  })
 
   def mapToWires( conv : Seq[Seq[Seq[Int]]], currData : Seq[Seq[Seq[T]]] ) : (Seq[T], Seq[T]) = {
     val posNums = ArrayBuffer[T]()
@@ -74,24 +73,49 @@ class ParallelTriConvSum( weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) ext
     return ( plusList.head, stages, opsTotal )
   }
 
-  val outputs = ArrayBuffer[(T, Int)]()
+  val currData = io.dataIn
+  val outSums = weights.map( conv => {
+    val numsOut = mapToWires( conv, io.dataIn )
+    val res = computeSum( numsOut._1, numsOut._2 )
+    ( res._1, res._2 )
+  })
 
-  for ( i <- 0 until noIn ) {
-    val currData = io.dataIn.bits(i)
-    val outSums = weights.map( conv => {
-      val numsOut = mapToWires( conv, currData )
-      val res = computeSum( numsOut._1, numsOut._2 )
-      ( res._1, res._2 )
+  val latency = outSums.map( _._2 ).max
+
+  io.dataOut := Vec( outSums.map( r => ShiftRegister( r._1, latency - r._2 )) )
+
+
+}
+
+/* take in 1, 0, -1 weights
+ * perform the convolution on them
+ */
+class TriConvSum( val weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) extends
+    NNLayer( tput, weights(0)(0)(0).size * weights(0)(0).size * weights(0).size, weights.size )  {
+
+  io.dataIn.ready := true.B
+
+  var tmpLat = -1
+
+  if ( throughput >= 1 ) {
+    val dataVec = inIOToVVV( weights(0)(0).size, weights(0)(0)(0).size )
+    val convRes = ( 0 until throughput.toInt ).map( idx => {
+      val pConv = Module( new ParrallelTriConvSum( dtype, weights ) )
+      pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
+        dataVec( wIdx + weights(0).size * idx )
+      }))
+      ( pConv.io.dataOut, pConv.latency )
     })
-    outputs ++= outSums
+
+    tmpLat = convRes.map( _._2 ).max
+
+    io.dataOut.bits := convRes.map( o => {
+      ShiftRegister( o._1, tmpLat - o._2 )
+    }).reduce( (a, b) => Vec( a ++ b ) )
   }
 
   // find the max latency
-  val latency = outputs.map( _._2 ).max
-
-  io.dataOut.bits := outputs.map( o => {
-    ShiftRegister( o._1, latency - o._2 )
-  })
+  val latency = tmpLat
 
   io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency )
 }

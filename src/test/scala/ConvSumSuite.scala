@@ -4,11 +4,10 @@ package binconcifartests
 import chisel3._
 import chisel3.iotesters.{PeekPokeTester, Driver, ChiselFlatSpec}
 import scala.util.Random
-import binconcifar.{TriConvCompute, ParallelTriConvSum}
+import binconcifar.TriConvSum
 import scala.collection.mutable.ArrayBuffer
 
-class ConvSumTests( c : TriConvCompute, weights : List[List[List[List[Int]]]] )
- extends PeekPokeTester( c ) {
+class ConvSumTests( c : TriConvSum ) extends PeekPokeTester( c ) {
   val myRand = new Random
   val cycs = c.latency*3
 
@@ -18,15 +17,15 @@ class ConvSumTests( c : TriConvCompute, weights : List[List[List[List[Int]]]] )
   }
 
   val img = List.fill( cycs ) {
-    List.fill( weights(0).size ) {
-      List.fill( weights(0)(0).size ){
-        List.fill( weights(0)(0)(0).size ) { getRndFP() }
+    List.fill( c.weights(0).size ) {
+      List.fill( c.weights(0)(0).size ){
+        List.fill( c.weights(0)(0)(0).size ) { getRndFP() }
       }
     }
   }
 
   val convRes = img.map( imgFrame => {
-    weights.map( convFrame => {
+    c.weights.map( convFrame => {
       convFrame.zip( imgFrame ).map( ci1 => {
         ci1._1.zip( ci1._2 ).map( ci2 => {
           ci2._1.zip( ci2._2 ).map( ci3 => {
@@ -50,12 +49,8 @@ class ConvSumTests( c : TriConvCompute, weights : List[List[List[List[Int]]]] )
     val vld = myRand.nextInt(2) != 0
     vldCheck += vld
     poke( c.io.dataIn.valid, vld )
-    for ( dataIn1 <- c.io.dataIn.bits(0).zip( img(cyc) ) ) {
-      for ( dataIn2 <- dataIn1._1.zip( dataIn1._2 ) ) {
-        for ( i <- 0 until dataIn2._2.size )
-          poke( dataIn2._1(i), dataIn2._2(i) )
-      }
-    }
+    for ( dataIn1 <- c.io.dataIn.bits.zip( img(cyc).reduce( _ ++ _ ).reduce( _ ++ _ ) ) )
+      poke( dataIn1._1, dataIn1._2 )
     if ( vld )
       chosenOutput += convRes(cyc).toList
     step( 1 )
@@ -97,9 +92,8 @@ class ConvSumSuite extends ChiselFlatSpec {
   backends foreach {backend =>
     it should s"correctly compute the convolution $backend" in {
       Driver(() => {
-        val c : TriConvCompute = new ParallelTriConvSum( weights, 1 )
-        c
-      }, backend )( c => new ConvSumTests(c, weights) ) should be (true)
+        new TriConvSum( weights, 1 )
+      }, backend )( c => new ConvSumTests( c ) ) should be (true)
     }
   }
 }

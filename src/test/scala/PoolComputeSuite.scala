@@ -4,11 +4,10 @@ package binconcifartests
 import chisel3._
 import chisel3.iotesters.{PeekPokeTester, Driver, ChiselFlatSpec}
 import scala.util.Random
-import binconcifar.{TriConvCompute, MaxPool}
+import binconcifar.PoolLayer
 import scala.collection.mutable.ArrayBuffer
 
-class PoolComputeTests( c : TriConvCompute, kernShape : (Int, Int, Int) )
-    extends PeekPokeTester( c ) {
+class PoolComputeTests( c : PoolLayer ) extends PeekPokeTester( c ) {
   val myRand = new Random
   val cycs = c.latency*3
 
@@ -18,15 +17,15 @@ class PoolComputeTests( c : TriConvCompute, kernShape : (Int, Int, Int) )
   }
 
   val img = List.fill( cycs ) {
-    List.fill( kernShape._3 ) {
-      List.fill( kernShape._2 ){
-        List.fill( kernShape._1 ) { getRndFP() }
+    List.fill( c.kernShape._1 ) {
+      List.fill( c.kernShape._2 ){
+        List.fill( c.kernShape._3 ) { getRndFP() }
       }
     }
   }
 
   val poolRes = img.map( poolTask => {
-    ( 0 until kernShape._1 ).map( idx => {
+    ( 0 until c.kernShape._3 ).map( idx => {
       poolTask.reduce( _ ++ _ ).map( _(idx) ).max
     })
   })
@@ -39,12 +38,8 @@ class PoolComputeTests( c : TriConvCompute, kernShape : (Int, Int, Int) )
     val vld = myRand.nextInt(2) != 0
     vldCheck += vld
     poke( c.io.dataIn.valid, vld )
-    for ( dataIn1 <- c.io.dataIn.bits(0).zip( img(inputPtr) ) ) {
-      for ( dataIn2 <- dataIn1._1.zip( dataIn1._2 ) ) {
-        for ( i <- 0 until dataIn2._2.size )
-          poke( dataIn2._1(i), dataIn2._2(i) )
-      }
-    }
+    for ( dataIn1 <- c.io.dataIn.bits.zip( img(inputPtr).reduce( _ ++ _ ).reduce( _ ++ _ ) ) )
+      poke( dataIn1._1, dataIn1._2 )
     if ( vld )
       chosenOutput += poolRes(inputPtr).toList
     inputPtr += 1
@@ -62,13 +57,12 @@ class PoolComputeTests( c : TriConvCompute, kernShape : (Int, Int, Int) )
 
 class PoolComputeSuite extends ChiselFlatSpec {
   behavior of "PoolCompute"
-  val kernShape = ( 4, 2, 2 )
+  val kernShape = ( 2, 2, 4 )
   backends foreach {backend =>
     it should s"correctly compute the max pool $backend" in {
       Driver(() => {
-        val c : TriConvCompute = new MaxPool( 1, kernShape )
-        c
-      }, backend )( c => new PoolComputeTests( c, kernShape  ) ) should be (true)
+        new PoolLayer( 1, kernShape )
+      }, backend )( c => new PoolComputeTests( c ) ) should be (true)
     }
   }
 }
