@@ -17,9 +17,9 @@ object MemShiftRegister {
 
 class MemShiftRegister[ T <: Data ]( genType : T, n : Int ) extends Module {
   val io = IO(new Bundle {
-    val in = genType.cloneType.asInput
+    val in = Input( genType.cloneType )
     val en = Input( Bool() )
-    val out = genType.cloneType.asOutput
+    val out = Output( genType.cloneType )
   })
 
   if ( n <= 2 ) {

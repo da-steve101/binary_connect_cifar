@@ -6,7 +6,9 @@ package binconcifar
 import chisel3._
 import chisel3.util._
 
-abstract class NNLayer( val throughput : Double, inSize : Int, outSize : Int ) extends Module {
+abstract class NNLayer( val throughput : Double, inSize : Int,
+  outSize : Int, dontMultOut : Boolean = false ) extends Module {
+
   val dtype = Wire(SInt( 8.W ))
   type T = SInt
 
@@ -17,7 +19,13 @@ abstract class NNLayer( val throughput : Double, inSize : Int, outSize : Int ) e
     assert( outSize * throughput == ( outSize * throughput ).toInt &&
       inSize * throughput == ( inSize * throughput ).toInt,
       "Must be integer number of IO when throughput < 1" )
-  val noOut = ( outSize * throughput ).toInt
+
+  val noOut = {
+    if ( dontMultOut )
+      outSize
+    else
+      ( outSize * throughput ).toInt
+  }
   val noIn = ( inSize * throughput ).toInt
 
   val io = IO(new Bundle {
