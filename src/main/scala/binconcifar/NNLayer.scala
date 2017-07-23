@@ -7,7 +7,7 @@ import chisel3._
 import chisel3.util._
 
 abstract class NNLayer( val throughput : Double, inSize : Int,
-  outSize : Int, dontMultOut : Boolean = false ) extends Module {
+  outSize : Int, val noOut : Int ) extends Module {
 
   val dtype = Wire(SInt( 8.W ))
   type T = SInt
@@ -20,17 +20,13 @@ abstract class NNLayer( val throughput : Double, inSize : Int,
       inSize * throughput == ( inSize * throughput ).toInt,
       "Must be integer number of IO when throughput < 1" )
 
-  val noOut = {
-    if ( dontMultOut )
-      outSize
-    else
-      ( outSize * throughput ).toInt
-  }
-  val noIn = ( inSize * throughput ).toInt
+  // noIn is defined as throughput
+  val noIn = ( throughput ).toInt
 
   val io = IO(new Bundle {
-    val dataIn = Flipped(Decoupled( Vec( noIn, dtype ) ))
-    val dataOut = Decoupled( Vec( noOut, dtype ) )
+    val dataIn = Flipped(Decoupled( Vec( inSize * noIn, dtype ) ))
+    val dataOut = Decoupled( Vec( outSize * noOut, dtype ) )
+    val vldMask = Output( Vec( noOut, Bool() ) )
   })
 
   def latency : Int

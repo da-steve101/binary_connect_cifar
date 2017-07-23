@@ -91,7 +91,8 @@ private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : S
  * perform the convolution on them
  */
 class TriConvSum( val weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) extends
-    NNLayer( tput, weights(0)(0)(0).size * weights(0)(0).size * weights(0).size, weights.size )  {
+    NNLayer( tput, weights(0)(0)(0).size * weights(0)(0).size * weights(0).size,
+      weights.size, tput.toInt )  {
 
   io.dataIn.ready := true.B
 
