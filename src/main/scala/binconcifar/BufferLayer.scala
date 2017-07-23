@@ -6,24 +6,22 @@ import chisel3.util._
 import scala.collection.mutable.ArrayBuffer
 
 object BufferLayer {
-  def calcOutSize( outFormat : ( Int, Int, Int ),
-    stride : Int, tPut : Double ) : Int = {
-    outFormat._1 * outFormat._2 * outFormat._3 * {
-      if ( tPut >= math.pow( stride, 2 ) )
-        tPut / math.pow( stride, 2 )
-      else
-        1
-    }.toInt
+  // cases to consider, stride = 1, tPut = 2, stride = 2, tPut = 3, stride = 2, tPut = 4
+  def calcOutSize( stride : Int, tPut : Double ) : Int = {
+    if ( tPut >= math.pow( stride, 2 ) )
+      ( tPut / math.pow( stride, 2 ) ).toInt
+    else
+      1
   }
 }
 
 class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, Int), qSize : Int,
   stride : Int, padding : Boolean, tPut : Double ) extends NNLayer( tPut, inSize,
-    BufferLayer.calcOutSize( outFormat, stride, tPut ), true )   {
+    outFormat._1 * outFormat._2 * outFormat._3, BufferLayer.calcOutSize( stride, tPut ) ) {
 
   Predef.assert( outFormat._1 == outFormat._2, "Must be square conv for now" )
 
-  val debug = false
+  val debug = true
 
   val bufferedInput = {
     if ( throughput < 1 ) {
@@ -45,45 +43,112 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
   val nextData = inQueue.valid & ready
 
   def zeroedSR( n : Int, b : Bool ) : Bool = {
-    val zeroInitSR = List.fill( n ) { RegInit( false.B ) }
-    zeroInitSR.head := b
-    for ( idx <- 0 until zeroInitSR.size - 1 )
-      zeroInitSR( idx + 1 ) := zeroInitSR( idx )
-    zeroInitSR.last
+    val zeroCntr = Counter( true.B, n - 1 )
+    val initDone = RegInit( false.B )
+    initDone := ( initDone | zeroCntr._2 )
+    val sr = ShiftRegister( b, n )
+    initDone | sr
   }
 
-  def getValid( nxt : Bool ) : Bool = {
-    val colCntr = Counter( nxt, imgSize )
+  def getCounter( nxt : Bool, size : Int, inc : Int ) : ( UInt, Bool ) = {
+    val bw = math.ceil( math.log( size + inc )/math.log( 2 ) ).toInt
+    val cntrReg = RegInit( 0.U( bw.W ) )
+    val wrap = Wire( Bool() )
+    val nxtCnt = cntrReg + inc.U
+    wrap := ( nxtCnt >= size.U ) && nxt
+    when ( nxt ) {
+      cntrReg := nxtCnt
+    }
+    when ( wrap ) {
+      cntrReg := nxtCnt - size.U
+    }
+    ( cntrReg, wrap )
+  }
+
+  def getValid( nxt : Bool ) : ( Bool, Bool ) = {
+    val cntrInc = math.ceil(throughput).toInt
+    val colCntr = getCounter( nxt, imgSize, cntrInc )
     val rowCntr = Counter( colCntr._2, imgSize )
     val vldOut = Wire( Bool() )
+    val vldMsk = Wire( Vec( noOut, Bool() ) )
 
     if ( debug ) {
       printf( "rowCntr = %d\n", rowCntr._1 )
       printf( "colCntr = %d\n", colCntr._1 )
+      printf( "vldOut = %d\n", vldOut )
+      printf( "vldMask = " )
+      for ( d <- vldMsk )
+        printf( "%d, ", d )
+      printf( "\n" )
     }
-
     val padSize = ( outFormat._2 - 1 )/ 2
+    val vldDist = math.max( padSize, noOut )
+    val vldSelVec = Vec(
+      List.fill( noOut ) { true.B } ++ // prev row
+      List.fill( 2*padSize ) { false.B } ++ // end of prev row and start of this one
+      List.fill( imgSize - 2*padSize ) { true.B } ++ // middle of row
+      List.fill( 2*padSize ) { false.B } ++ // end of row and start of next one
+      List.fill( noOut - 2*padSize ) { true.B } // middle of next row
+    )
+    val padBw = math.ceil( math.log( imgSize + noOut + padSize ) / math.log(2) ).toInt
+    val highNum = Wire( UInt( padBw.W ) )
+    val lowNum = Wire( UInt( padBw.W ) )
+    highNum := colCntr._1 + ( noOut + padSize ).U
+    lowNum := colCntr._1 + padSize.U
     vldOut := nxt
+    val colMin = math.max( 2*padSize - noOut, 0 )
+    for ( i <- 0 until noOut )
+      vldMsk( i ) := true.B
     if ( padding ) {
       vldOut := true.B
     } else {
-      when ( colCntr._1 < padSize.U ||
-        colCntr._1 >= ( imgSize - padSize ).U ) {
+      when ( colCntr._1 < colMin.U ||
+        colCntr._1 >= ( imgSize - padSize + noOut - 1 ).U ) {
         vldOut := false.B
+        // printf( "colCntr._1 = %d means false\n", colCntr._1 )
       }
+      DynamicVecAssign( vldMsk, ( noOut - 1 ).U, 0.U,
+        vldSelVec, highNum, lowNum )
       when ( rowCntr._1 < padSize.U ||
         rowCntr._1 >= ( imgSize - padSize ).U ) {
         vldOut := false.B
       }
     }
-    zeroedSR( padSize * imgSize + outFormat._2 - padSize, vldOut )
+
+    val latency = math.ceil( ( padSize * imgSize + outFormat._1 - padSize )/ throughput ).toInt
+
+    for ( i <- 0 until noOut )
+      io.vldMask( i ) := ShiftRegister( vldMsk( i ), latency - 1 )
+
+    ( zeroedSR( latency, vldOut ), colCntr._2 )
   }
 
+  val vldCntr = getValid( nextData )
   // valid should be delayed using counter ...
-  io.dataOut.valid := getValid( nextData )
+  io.dataOut.valid := vldCntr._1
 
-  val memBuffers = ArrayBuffer[Vec[T]]()
-  memBuffers += inQueue.bits
+  if ( debug )
+    printf( "nextData = %d\n", nextData )
+
+  def getMemBuffers( inputData : Vec[T], bufferSize : Int, nextData : Bool ) : List[Vec[T]] = {
+    val remainder = ( imgSize - bufferSize * throughput ).toInt
+
+    val memBuffers = ArrayBuffer[Vec[T]]()
+    memBuffers += inputData // this is the reference
+
+    // create a mem to buffer the data to increase the latency to the correct amount
+    while ( memBuffers.size < outFormat._1 ) {
+      val lastInput = memBuffers.last.grouped( outFormat._3 ).toList.map( Vec( _ ) )
+      val lastReg = lastInput.map( x => RegEnable( x, nextData ) )
+      val lastComb = lastReg ++ lastInput
+      val chosenVec = ( 0 until lastInput.size ).map( i => {
+        lastComb( lastInput.size + i - remainder )
+      }).reduce( ( a, b ) => Vec( a ++ b ) )
+      memBuffers += MemShiftRegister( chosenVec, bufferSize, nextData )
+    }
+
+    memBuffers.toList
+  }
 
   val bufferSize = {
     if ( throughput < 1 )
@@ -92,12 +157,7 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
       ( imgSize / throughput ).toInt
   }
 
-  if ( debug )
-    printf( "nextData = %d\n", nextData )
-
-  // create a mem to buffer the data
-  while ( memBuffers.size < outFormat._1 )
-    memBuffers += MemShiftRegister( memBuffers.last, bufferSize, nextData )
+  val memBuffers = getMemBuffers( inQueue.bits, bufferSize, nextData )
 
   override def latency : Int = {
     // can define it ...
@@ -105,28 +165,29 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
     -1
   }
 
-
-
   /** Responsible for buffering a vec that has multiple outputs
     */
   def bufferVec( vecIn : Vec[T], stride : Int ) : List[Vec[Vec[T]]] = {
     // consider stride and throughput ( is vec size )
-
-    // cases to consider, stride = 1, tPut = 2, stride = 2, tPut = 3, stride = 2, tPut = 4
-    val noOut = throughput.toInt
 
     // partition vecIn into its dims
     val vecGrp = vecIn.grouped( outFormat._3 ).toList.map( Vec( _ ) )
     val vecGrpReg = vecGrp.map( vg => { RegEnable( vg, nextData ) })
     val vecComb = vecGrpReg ++ vecGrp // combined vec of last 2 cycs
 
+    val tmpRegInits = ( 0 until noOut ).map( idx => {
+      ( 0 until noOut ).map( i => vecComb( vecGrp.size - idx + i ) ).toList.reverse
+    })
+
     if ( debug ) {
-      printf( "vecComb = " )
-      for ( x <- vecComb ) {
-        for ( y <- x  )
-          printf( "%d, ", y )
+      for ( tri <- tmpRegInits.zipWithIndex ) {
+        printf( "tmpRegInit( " + tri._2 + " ) = " )
+        for ( x <- tri._1 ) {
+          for ( y <- x )
+            printf( "%d, ", y )
+        }
+        printf( "\n" )
       }
-      printf( "\n" )
     }
 
     // buffer the regs
@@ -135,7 +196,7 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
       when ( nextData ) {
         for ( i <- 0 until noOut ) {
           for ( j <- 0 until outFormat._3 )
-            tmpRegs( i )( j ) := vecComb( vecGrp.size - idx + noOut - i - 1 )( j )
+            tmpRegs( i )( j ) := tmpRegInits( idx )( i )( j )
         }
         for ( i <- 0 until outFormat._2 - noOut ) {
           for ( j <- 0 until outFormat._3 )

@@ -9,11 +9,13 @@ scalaVersion := "2.11.7"
 
 scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked", "-language:reflectiveCalls")
 
+testOptions in Test += Tests.Argument(TestFrameworks.ScalaTest, "-oF")
+
 // Provide a managed dependency on X if -DXVersion="" is supplied on the command line.
 // The following are the default development versions, not the "release" versions.
 val defaultVersions = Map(
-  "chisel3" -> "3.0-SNAPSHOT",
-  "chisel-iotesters" -> "1.1-SNAPSHOT"
+  "chisel3" -> "3.1-SNAPSHOT",
+  "chisel-iotesters" -> "1.2-SNAPSHOT"
   )
 
 libraryDependencies ++= (Seq("chisel3","chisel-iotesters").map {

@@ -80,9 +80,16 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
     println( "bits = " + peek( c.io.dataOut.bits ) )
     println( "outVld = " + outVld )
     if ( outVld ) {
-      for ( j <- 0 until convOut( convCount ).size )
-        expect( c.io.dataOut.bits(j), convOut( convCount )(j) )
-      convCount += 1
+      for ( i <- 0 until c.noOut ) {
+        val vldMsk = peek( c.io.vldMask( i ) ) == 1
+        println( "vldMsk( " + i + " ) = " + vldMsk )
+        if ( vldMsk && convCount < noConvs ) {
+          val offset = i * convOut( convCount ).size
+          for ( j <- 0 until convOut( convCount ).size )
+            expect( c.io.dataOut.bits( offset + j), convOut( convCount )(j) )
+          convCount += 1
+        }
+      }
     }
   }
 }
@@ -96,7 +103,7 @@ class BufferLayerSuite extends ChiselFlatSpec {
   backends foreach {backend =>
     it should s"buffer inputs on a layer $backend" in {
       for ( tPut <- List( 1, 2 ) ) {
-        for ( inputParam <- List( 3, 5 ).zip( List( 5, 32 ) ) ) {
+        for ( inputParam <- List( 3, 5 ).zip( List( 5, 9 ) ) ) {
           val imgSize = inputParam._2
           val outFormat = ( inputParam._1, inputParam._1, inSize )
           Driver(() => {
