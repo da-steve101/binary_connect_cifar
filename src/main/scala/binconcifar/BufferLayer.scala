@@ -43,11 +43,14 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
   val nextData = inQueue.valid & ready
 
   def zeroedSR( n : Int, b : Bool ) : Bool = {
+    /*
     val zeroCntr = Counter( true.B, n - 1 )
     val initDone = RegInit( false.B )
     initDone := ( initDone | zeroCntr._2 )
     val sr = ShiftRegister( b, n )
     initDone | sr
+     */
+    ShiftRegister( b, n, false.B, true.B )
   }
 
   def getCounter( nxt : Bool, size : Int, inc : Int ) : ( UInt, Bool ) = {
@@ -83,29 +86,27 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
     }
     val padSize = ( outFormat._2 - 1 )/ 2
     val vldDist = math.max( padSize, noOut )
+    val imgRow = List.fill( padSize ) { false.B } ++ List.fill( imgSize - 2*padSize ) { true.B } ++ List.fill( padSize ) { false.B }
     val vldSelVec = Vec(
-      List.fill( noOut ) { true.B } ++ // prev row
-      List.fill( 2*padSize ) { false.B } ++ // end of prev row and start of this one
-      List.fill( imgSize - 2*padSize ) { true.B } ++ // middle of row
-      List.fill( 2*padSize ) { false.B } ++ // end of row and start of next one
-      List.fill( noOut - 2*padSize ) { true.B } // middle of next row
+      imgRow.takeRight( noOut ) ++
+      imgRow ++
+      imgRow.take( noOut )
     )
-    val padBw = math.ceil( math.log( imgSize + noOut + padSize ) / math.log(2) ).toInt
-    val highNum = Wire( UInt( padBw.W ) )
-    val lowNum = Wire( UInt( padBw.W ) )
-    highNum := colCntr._1 + ( noOut + padSize ).U
-    lowNum := colCntr._1 + padSize.U
+    val padBw = log2Up( imgSize + 2*noOut ).W
+    val highNum = Wire( UInt( padBw ) )
+    val lowNum = Wire( UInt( padBw ) )
+    highNum := colCntr._1 + (2*noOut - 1).U
+    lowNum := colCntr._1 + noOut.U
     vldOut := nxt
-    val colMin = math.max( 2*padSize - noOut, 0 )
+    val noOutPad = math.max( padSize - noOut + 1, 0 )
     for ( i <- 0 until noOut )
       vldMsk( i ) := true.B
     if ( padding ) {
       vldOut := true.B
     } else {
-      when ( colCntr._1 < colMin.U ||
+      when ( colCntr._1 < noOutPad.U ||
         colCntr._1 >= ( imgSize - padSize + noOut - 1 ).U ) {
         vldOut := false.B
-        // printf( "colCntr._1 = %d means false\n", colCntr._1 )
       }
       DynamicVecAssign( vldMsk, ( noOut - 1 ).U, 0.U,
         vldSelVec, highNum, lowNum )
@@ -115,10 +116,10 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
       }
     }
 
-    val latency = math.ceil( ( padSize * imgSize + outFormat._1 - padSize )/ throughput ).toInt
+    val latency = math.ceil( ( padSize * imgSize + padSize + 1 )/ throughput ).toInt
 
     for ( i <- 0 until noOut )
-      io.vldMask( i ) := ShiftRegister( vldMsk( i ), latency - 1 )
+      io.vldMask( i ) := ShiftRegister( vldMsk( i ), latency )
 
     ( zeroedSR( latency, vldOut ), colCntr._2 )
   }
