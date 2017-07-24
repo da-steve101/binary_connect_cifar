@@ -35,7 +35,7 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
     val imData = ( 0 until imgSize ).map( j => {
       ( 0 until outFormat._3 ).map( k => {
         val tmp = i*imgSize*outFormat._3 + j*outFormat._3 + k
-        BigInt( tmp % ( 1 << 6 ) )
+        BigInt( tmp % ( 1 << 7 ) )
       })
     })
     println( "" + imData )
@@ -101,11 +101,11 @@ class BufferLayerSuite extends ChiselFlatSpec {
   val stride = 1
   val padding = false
   backends foreach {backend =>
-    it should s"buffer inputs on a layer $backend" in {
-      for ( tPut <- List( 1, 2 ) ) {
-        for ( inputParam <- List( 3, 5 ).zip( List( 5, 9 ) ) ) {
-          val imgSize = inputParam._2
-          val outFormat = ( inputParam._1, inputParam._1, inSize )
+    for ( tPut <- List( 1, 2 ) ) {
+      for ( inputParam <- List( 3, 5, 3, 5 ).zip( List( 5, 9, 8, 8 ) ) ) {
+        val imgSize = inputParam._2
+        val outFormat = ( inputParam._1, inputParam._1, inSize )
+        it should s"buffer inputs on a layer with tPut = $tPut and $inputParam using $backend" in {
           Driver(() => {
             new BufferLayer( imgSize, inSize, outFormat, qSize, stride, padding, tPut )
           }, backend )( c => new BufferLayerTests( c ) ) should be (true)

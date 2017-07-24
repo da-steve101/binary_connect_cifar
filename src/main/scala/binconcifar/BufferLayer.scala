@@ -85,43 +85,34 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
       printf( "\n" )
     }
     val padSize = ( outFormat._2 - 1 )/ 2
-    val vldDist = math.max( padSize, noOut )
-    val imgRow = List.fill( padSize ) { false.B } ++ List.fill( imgSize - 2*padSize ) { true.B } ++ List.fill( padSize ) { false.B }
-    val vldSelVec = Vec(
-      imgRow.takeRight( noOut ) ++
-      imgRow ++
-      imgRow.take( noOut )
-    )
-    val padBw = log2Up( imgSize + 2*noOut ).W
-    val highNum = Wire( UInt( padBw ) )
-    val lowNum = Wire( UInt( padBw ) )
-    highNum := colCntr._1 + (2*noOut - 1).U
-    lowNum := colCntr._1 + noOut.U
+    val imgRow = List.fill( outFormat._2 - 1 ) { false } ++ List.fill( imgSize - outFormat._2 + 1  ) { true }
+    val vldMaskRaw = ( 0 until imgSize ).map( cnt => {
+      ( 0 until noOut ).map( idx => {
+        val imIdx = ( cnt + idx ) % imgSize
+        imgRow( imIdx )
+      }).toList
+    }).toList
+    val colOutRaw = vldMaskRaw.map( x => x.reduce( _ || _ ) )
+    val vldMaskVec = Vec( vldMaskRaw.map( x => Vec( x.map( _.B ) )) )
+    val colOutVec = Vec( colOutRaw.map( _.B ) )
     vldOut := nxt
-    val noOutPad = math.max( padSize - noOut + 1, 0 )
-    for ( i <- 0 until noOut )
-      vldMsk( i ) := true.B
+    vldMsk := vldMaskVec( colCntr._1 )
     if ( padding ) {
       vldOut := true.B
     } else {
-      when ( colCntr._1 < noOutPad.U ||
-        colCntr._1 >= ( imgSize - padSize + noOut - 1 ).U ) {
+      when ( !colOutVec( colCntr._1 ) ) {
         vldOut := false.B
       }
-      DynamicVecAssign( vldMsk, ( noOut - 1 ).U, 0.U,
-        vldSelVec, highNum, lowNum )
-      when ( rowCntr._1 < padSize.U ||
-        rowCntr._1 >= ( imgSize - padSize ).U ) {
+      when ( rowCntr._1 < ( outFormat._1 - 1 ).U ) {
         vldOut := false.B
       }
     }
-
-    val latency = math.ceil( ( padSize * imgSize + padSize + 1 )/ throughput ).toInt
-
     for ( i <- 0 until noOut )
-      io.vldMask( i ) := ShiftRegister( vldMsk( i ), latency )
+      io.vldMask( i ) := RegNext( vldMsk( i ) )
 
-    ( zeroedSR( latency, vldOut ), colCntr._2 )
+    val vldReg = RegInit( false.B )
+    vldReg := vldOut
+    ( vldReg, colCntr._2 )
   }
 
   val vldCntr = getValid( nextData )
