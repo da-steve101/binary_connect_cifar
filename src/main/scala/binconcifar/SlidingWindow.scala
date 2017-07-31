@@ -47,12 +47,10 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
 
   private def getStrideCntr() : ( UInt, Bool, UInt ) = {
     val effWindowFilled = math.ceil( effWindowSize.toDouble / inSize ).toInt
-    val cntr = Counter( io.dataIn.valid, effWindowFilled )
+    println( "effWindowFilled = " + effWindowFilled )
+    val cntr = Counter( io.dataIn.valid, effWindowFilled + 1 )
     val initDone = RegInit( false.B )
-    if ( effWindowFilled <= windowFilled )
-      initDone := initDone | cntr._2
-    else
-      initDone := initDone | ( cntr._1 >= ( windowFilled - 1 ).U )
+    initDone := initDone | ( cntr._1 >= ( windowFilled - 1 ).U )
 
     printf( "cntr = %d\n", cntr._1 )
     printf( "initDone = %d\n", initDone )
@@ -61,11 +59,14 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
     val cntrMax = minWinSize / inSize
 
     val pureOffsets = ( 0 until uniquePos ).map( x => {
-      val initOff = math.ceil( windowSize.toDouble / inSize ).toInt * inSize - windowSize
-      println( "initOff = " + initOff )
-      val winOff = x * stride + initOff
+      // total number of inputs recieved so far
+      val noNums = math.ceil( (x * stride + windowSize.toDouble ) / inSize ).toInt * inSize
+      // offset to nearest stride
+      val winOff = noNums - ( x * stride + windowSize.toDouble )
       println( "winOff = " + winOff )
-      val intY = math.ceil( winOff.toDouble / inSize ).toInt
+      // find the number the counter is for input x
+      val cntrPosOff = x * stride - inSize + ( windowSize % inSize)
+      val intY = math.ceil( cntrPosOff.toDouble / inSize ).toInt
       println( "intY = " + intY )
       val y = winOff.toInt % inSize
       println( "y = " + y )
@@ -79,35 +80,46 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
 
     val vldMsks = List.fill( noOut ) { RegInit( false.B ) }
     for ( idx <- 0 until noOut ) {
-      val triggerCond = {
-        if ( idx < noOut - 1 )
-          cntr._1 >= ( windowFilled - 1 + math.ceil( idx * stride.toDouble / inSize ).toInt ).U
-        else
-          cntr._2
-      }
-      vldMsks( idx ) := vldMsks( idx ) | triggerCond
+      val triggerReg = RegInit( false.B )
+      val triggerCond = ( cntr._1 >= math.ceil( ( windowSize + idx * stride.toDouble ) / inSize ).toInt.U )
+      triggerReg := triggerReg | triggerCond
+      // and range is valid
+      vldMsks( idx ) := vldMsks( idx ) | triggerCond | triggerReg
       // delay by one cyc to match other outputs
-      io.vldMsk( idx ) := RegEnable( vldMsks( idx ), io.dataIn.valid )
+      io.vldMsk( idx ) := vldMsks( idx )
     }
 
     if ( cntrMax <= 1 )
-      return ( 0.U( 1.W ), initDone, minStart._2.U )
+      return ( 0.U( 1.W ), initDone, (minStart._2 * grpSize ).U )
 
     println( "cntrMax = " + cntrMax )
 
     val strideCntr = Counter( io.dataIn.valid & initDone, cntrMax )
 
-    val strideOffset = Wire( UInt( log2Up( inSize ).W ) )
+    val strideOffset = Wire( UInt( log2Up( inSize * grpSize ).W ) )
     val strideVld = Wire( Bool() )
     strideOffset := 0.U
     strideVld := false.B
     for ( yOff <- strideOffsets ) {
       when ( strideCntr._1 === yOff._1.U ) {
         strideVld := true.B
-        strideOffset := yOff._2.U
+        strideOffset := ( yOff._2 * grpSize ).U
+        // when offset outside of range then set vldMsk false
+        for ( idx <- 0 until noOut ) {
+          val startPtr = yOff._2 + idx*stride
+          val endPtr = startPtr + windowSize - 1
+          if ( endPtr >= actualWindowSize || startPtr >= inSize ) {
+            println( "vldMsks( " + idx + " ) when " + yOff._1 )
+            vldMsks( idx ) := false.B
+          }
+        }
       }
     }
 
+    printf( "vldMsk = " )
+    for ( d <- vldMsks )
+      printf( "%d, ", d )
+    printf( "\n" )
     ( strideCntr._1, strideVld & initDone, strideOffset )
   }
 
@@ -133,12 +145,13 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
   // assign the output
   val vecSize = windowSize * grpSize
   for ( idx <- 0 until noOut ) {
-    val windStart = idx * stride
-    val highNum = ( vecSize - 1 + windStart ).U( log2Up( actualWindowSize ).W ) + strideCntr._3
-    val lowNum = windStart.U( log2Up( actualWindowSize ).W ) + strideCntr._3
+    val windStart = idx * stride * grpSize
+    val highNum = ( vecSize - 1 + windStart ).U( log2Up( actualWindowSize*grpSize ).W ) + strideCntr._3
+    val lowNum = windStart.U( log2Up( actualWindowSize*grpSize ).W ) + strideCntr._3
     printf( "highNum = %d\n", highNum )
     printf( "lowNum = %d\n", lowNum )
     assert( highNum >= lowNum, "High num should be greater than low num" )
+    // assert( highNum < actualWindowSize.U & lowNum >= 0.U, "Idxs should be 0 <= x < vecSize" )
     DynamicVecAssign( vecOut, ( vecSize * ( idx + 1 ) - 1 ).U, ( vecSize * idx ).U,
       windowComb, highNum, lowNum )
   }
