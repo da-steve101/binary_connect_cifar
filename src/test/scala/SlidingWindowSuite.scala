@@ -12,7 +12,7 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
   val myRand = new Random
   val genData = ( 0 until c.inSize * cycs ).map( i => {
     ( 0 until c.grpSize ).map( j => {
-      BigInt( ( i*c.grpSize + j ) % ( 1 << 7 ) )
+      BigInt( myRand.nextInt( 1 << 7 ) )
     }).toList
   }).toList
   val dataGrped = genData.grouped( c.inSize ).toList
@@ -21,20 +21,16 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
   var inIdx = 0
   while ( inIdx < dataGrped.size ) {
     val d = dataGrped( inIdx )
-    println( "d = " + d )
     val data = d.reduce( _ ++ _ ).toIndexedSeq.reverse
     for ( i <- 0 until data.size )
       poke( c.io.dataIn.bits( i ), data( i ) )
-    val vld = ( myRand.nextInt( 2 ) != 0 )
+    val vld = ( myRand.nextInt( 5 ) != 0 )
     poke( c.io.dataIn.valid, vld )
     if ( vld )
       inIdx += 1
     step( 1 )
-    println( "dataOut = " + peek( c.io.dataOut.bits ) )
     val vldMsk = peek( c.io.vldMsk )
-    println( "vldMsk = " + vldMsk )
     if ( peek( c.io.dataOut.valid ) == 1 ) {
-      println( "vldCnt = " + vldCnt )
       vldCnt += 1
       for ( idx <- 0 until c.noOut ) {
         if ( vldMsk( c.noOut - 1 - idx ) == 1 ) {
