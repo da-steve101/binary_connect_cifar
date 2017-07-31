@@ -29,13 +29,19 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
   val windowRegs = List.fill( actualWindowSize ) { List.fill( grpSize ) { Reg( genType.cloneType ) } }
   // first inSize regs
   for ( i <- 0 until inSize ) {
-    for ( j <- 0 until grpSize )
-      windowRegs( i )( j ) := io.dataIn.bits( i*grpSize + j )
+    for ( j <- 0 until grpSize ) {
+      when ( io.dataIn.valid ) {
+        windowRegs( i )( j ) := io.dataIn.bits( i*grpSize + j )
+      }
+    }
   }
 
   for ( i <- 0 until actualWindowSize - inSize ) {
-    for ( j <- 0 until grpSize )
-      windowRegs( i + inSize )( j ) := windowRegs( i )( j )
+    for ( j <- 0 until grpSize ) {
+      when ( io.dataIn.valid ) {
+        windowRegs( i + inSize )( j ) := windowRegs( i )( j )
+      }
+    }
   }
 
   val vecOut = Wire( Vec( outSize * grpSize, genType.cloneType ) )
@@ -50,7 +56,9 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
     println( "effWindowFilled = " + effWindowFilled )
     val cntr = Counter( io.dataIn.valid, effWindowFilled + 1 )
     val initDone = RegInit( false.B )
-    initDone := initDone | ( cntr._1 >= ( windowFilled - 1 ).U )
+    when ( io.dataIn.valid ) {
+      initDone := initDone | ( cntr._1 >= ( windowFilled - 1 ).U )
+    }
 
     printf( "cntr = %d\n", cntr._1 )
     printf( "initDone = %d\n", initDone )
