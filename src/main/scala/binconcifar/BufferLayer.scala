@@ -43,13 +43,6 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
   val nextData = inQueue.valid & ready
 
   def zeroedSR( n : Int, b : Bool ) : Bool = {
-    /*
-    val zeroCntr = Counter( true.B, n - 1 )
-    val initDone = RegInit( false.B )
-    initDone := ( initDone | zeroCntr._2 )
-    val sr = ShiftRegister( b, n )
-    initDone | sr
-     */
     ShiftRegister( b, n, false.B, true.B )
   }
 
@@ -67,57 +60,6 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
     }
     ( cntrReg, wrap )
   }
-
-  def getValid( nxt : Bool ) : ( Bool, Bool ) = {
-    val cntrInc = math.ceil(throughput).toInt
-    val colCntr = getCounter( nxt, imgSize, cntrInc )
-    val rowCntr = Counter( colCntr._2, imgSize )
-    val vldOut = Wire( Bool() )
-    val vldMsk = Wire( Vec( noOut, Bool() ) )
-
-    if ( debug ) {
-      printf( "rowCntr = %d\n", rowCntr._1 )
-      printf( "colCntr = %d\n", colCntr._1 )
-      printf( "vldOut = %d\n", vldOut )
-      printf( "vldMask = " )
-      for ( d <- vldMsk )
-        printf( "%d, ", d )
-      printf( "\n" )
-    }
-    val padSize = ( outFormat._2 - 1 )/ 2
-    val imgRow = List.fill( outFormat._2 - 1 ) { false } ++ List.fill( imgSize - outFormat._2 + 1  ) { true }
-    val vldMaskRaw = ( 0 until imgSize ).map( cnt => {
-      ( 0 until noOut ).map( idx => {
-        val imIdx = ( cnt + idx ) % imgSize
-        imgRow( imIdx )
-      }).toList
-    }).toList
-    val colOutRaw = vldMaskRaw.map( x => x.reduce( _ || _ ) )
-    val vldMaskVec = Vec( vldMaskRaw.map( x => Vec( x.map( _.B ) )) )
-    val colOutVec = Vec( colOutRaw.map( _.B ) )
-    vldOut := nxt
-    vldMsk := vldMaskVec( colCntr._1 )
-    if ( padding ) {
-      vldOut := true.B
-    } else {
-      when ( !colOutVec( colCntr._1 ) ) {
-        vldOut := false.B
-      }
-      when ( rowCntr._1 < ( outFormat._1 - 1 ).U ) {
-        vldOut := false.B
-      }
-    }
-    for ( i <- 0 until noOut )
-      io.vldMask( i ) := RegNext( vldMsk( i ) )
-
-    val vldReg = RegInit( false.B )
-    vldReg := vldOut
-    ( vldReg, colCntr._2 )
-  }
-
-  val vldCntr = getValid( nextData )
-  // valid should be delayed using counter ...
-  io.dataOut.valid := vldCntr._1
 
   if ( debug )
     printf( "nextData = %d\n", nextData )
@@ -159,60 +101,18 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
 
   /** Responsible for buffering a vec that has multiple outputs
     */
-  def bufferVec( vecIn : Vec[T], stride : Int ) : List[Vec[Vec[T]]] = {
+  def bufferVec( vecIn : Vec[T], vld : Bool, stride : Int ) : (Vec[T], Bool) = {
     // consider stride and throughput ( is vec size )
 
-    // partition vecIn into its dims
-    val vecGrp = vecIn.grouped( outFormat._3 ).toList.map( Vec( _ ) )
-    val vecGrpReg = vecGrp.map( vg => { RegEnable( vg, nextData ) })
-    val vecComb = vecGrpReg ++ vecGrp // combined vec of last 2 cycs
+    val sldWin = Module( new SlidingWindow( dtype.cloneType, outFormat._3, noIn, outFormat._2, stride ) )
+    sldWin.io.dataIn.bits := vecIn
+    sldWin.io.dataIn.valid := vld
 
-    val tmpRegInits = ( 0 until noOut ).map( idx => {
-      ( 0 until noOut ).map( i => vecComb( vecGrp.size - idx + i ) ).toList.reverse
-    })
-
-    if ( debug ) {
-      for ( tri <- tmpRegInits.zipWithIndex ) {
-        printf( "tmpRegInit( " + tri._2 + " ) = " )
-        for ( x <- tri._1 ) {
-          for ( y <- x )
-            printf( "%d, ", y )
-        }
-        printf( "\n" )
-      }
-    }
-
-    // buffer the regs
-    val bufferRegs = ( 0 until noOut ).map( idx => {
-      val tmpRegs = List.fill( outFormat._2 ) { List.fill( outFormat._3 ) { Reg( dtype.cloneType ) } }
-      when ( nextData ) {
-        for ( i <- 0 until noOut ) {
-          for ( j <- 0 until outFormat._3 )
-            tmpRegs( i )( j ) := tmpRegInits( idx )( i )( j )
-        }
-        for ( i <- 0 until outFormat._2 - noOut ) {
-          for ( j <- 0 until outFormat._3 )
-            tmpRegs( i + noOut )( j ) := tmpRegs( i )( j )
-        }
-      }
-      if ( debug ) {
-        for ( a <- tmpRegs.zipWithIndex ) {
-          printf( "tmpRegs( " + idx + " )( " + a._2 + " ) = " )
-          for ( b <- a._1 )
-            printf( "%d,", b )
-          printf( "\n" )
-        }
-      }
-
-      Vec( tmpRegs.map( Vec( _ ) ) )
-    }).toList
-
-    bufferRegs
+    ( sldWin.io.dataOut.bits, sldWin.io.dataOut.valid )
   }
 
-  val bufferedVecs = memBuffers.map( mb => bufferVec( mb, stride ) )
-  val outVecs = ( 0 until bufferedVecs(0).size ).toList.map( i => bufferedVecs.map( x => x(i) ) )
-  val joinedVecs = outVecs.map( x => x.reduce( ( a, b ) => Vec( a ++ b ) ).reverse.reduce( ( a, b ) => Vec( a ++ b ) ) )
+  val joinedVecs = memBuffers.map( mb => bufferVec( mb, true.B, stride ) )
+  val dataOut = joinedVecs.map( _._1 )
 
   if ( debug ) {
     for ( mb <- memBuffers.zipWithIndex ) {
@@ -223,6 +123,57 @@ class BufferLayer( val imgSize : Int, inSize : Int, val outFormat : (Int, Int, I
     }
   }
 
-  io.dataOut.bits := joinedVecs.reverse.reduce( ( a, b ) => Vec( a ++ b ) )
+  io.dataOut.bits := dataOut.reduce( ( a, b ) => Vec( a ++ b ) )
+
+  def getValid( nxt : Bool ) : ( Bool, Bool ) = {
+    val cntrInc = math.ceil(throughput).toInt
+    val colCntr = getCounter( nxt, imgSize, cntrInc )
+    val rowCntr = Counter( colCntr._2, imgSize )
+    val vldOut = Wire( Bool() )
+    val vldMsk = Wire( Vec( noOut, Bool() ) )
+
+    if ( debug ) {
+      printf( "rowCntr = %d\n", rowCntr._1 )
+      printf( "colCntr = %d\n", colCntr._1 )
+      printf( "vldOut = %d\n", vldOut )
+      printf( "vldMask = " )
+      for ( d <- vldMsk )
+        printf( "%d, ", d )
+      printf( "\n" )
+    }
+    val padSize = ( outFormat._2 - 1 )/ 2
+    val imgRow = List.fill( outFormat._2 - 1 ) { false } ++ List.fill( imgSize - outFormat._2 + 1  ) { true }
+    val vldMaskRaw = ( 0 until imgSize ).map( cnt => {
+      ( 0 until noOut ).map( idx => {
+        val imIdx = ( cnt + idx ) % imgSize
+        imgRow( imIdx )
+      }).toList
+    }).toList
+    val colOutRaw = vldMaskRaw.map( x => x.reduce( _ || _ ) )
+    val vldMaskVec = Vec( vldMaskRaw.map( x => Vec( x.map( _.B ) )) )
+    val colOutVec = Vec( colOutRaw.map( _.B ) )
+    vldOut := nxt
+    vldMsk := vldMaskVec( colCntr._1 )
+    if ( padding ) {
+      vldOut := true.B
+    } else {
+      when ( !colOutVec( colCntr._1 ) ) {
+        vldOut := false.B
+      }
+      when ( rowCntr._1 < ( outFormat._1 - 1 ).U ) {
+        vldOut := false.B
+      }
+    }
+    for ( i <- 0 until noOut )
+      io.vldMask( i ) := RegNext( RegNext( vldMsk( i ) ) )
+
+    val vldReg = RegInit( false.B )
+    vldReg := vldOut
+    ( vldReg, colCntr._2 )
+  }
+
+  val vldCntr = getValid( nextData )
+  // valid should be delayed using counter ...
+  io.dataOut.valid := RegNext( vldCntr._1 )
 
 }

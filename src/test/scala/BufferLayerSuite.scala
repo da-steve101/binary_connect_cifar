@@ -19,17 +19,6 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
   val myRand = new Random
 
   println( "img = " )
-  /*
-  val img = List.fill( imgSize ) {
-    val imData = List.fill( imgSize ) {
-      List.fill( outFormat._3 ) {
-        BigInt( myRand.nextInt( 1 << 6 ) )
-      }
-    }
-    println( "" + imData )
-    imData
-  }
-   */
 
   val img = ( 0 until imgSize ).map( i => {
     val imData = ( 0 until imgSize ).map( j => {
@@ -49,8 +38,8 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
       ( -padSize to padSize ).map( cx => {
         ( -padSize to padSize ).map( cy => {
           img( xIdx + cx )( yIdx + cy )
-        }).reduce( _ ++ _ )
-      }).reduce( _ ++ _ )
+        })
+      })
     })
   }).reduce( _ ++ _ )
 
@@ -79,14 +68,19 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
     val outVld = peek( c.io.dataOut.valid ) == 1
     println( "bits = " + peek( c.io.dataOut.bits ) )
     println( "outVld = " + outVld )
-    if ( outVld ) {
-      for ( i <- 0 until c.noOut ) {
-        val vldMsk = peek( c.io.vldMask( i ) ) == 1
-        println( "vldMsk( " + i + " ) = " + vldMsk )
+    for ( i <- 0 until c.noOut ) {
+      val vldMsk = peek( c.io.vldMask( i ) ) == 1
+      println( "vldMsk( " + i + " ) = " + vldMsk )
+      if ( outVld ) {
         if ( vldMsk && convCount < noConvs ) {
-          val offset = i * convOut( convCount ).size
-          for ( j <- 0 until convOut( convCount ).size )
-            expect( c.io.dataOut.bits( offset + j), convOut( convCount )(j) )
+          val offset = i * c.outFormat._1 * c.outFormat._2 * c.outFormat._3
+          for ( j <- 0 until outFormat._1 ) {
+            for ( k <- 0 until outFormat._2 ) {
+              for ( l <- 0 until c.outFormat._3 )
+                expect( c.io.dataOut.bits( offset + j*c.outFormat._2*c.outFormat._3 + k*c.outFormat._3 + l ),
+                  convOut( convCount )( c.outFormat._1 - 1 - j )( c.outFormat._2 - 1 - k )( l ) )
+            }
+          }
           convCount += 1
         }
       }
@@ -101,8 +95,8 @@ class BufferLayerSuite extends ChiselFlatSpec {
   val stride = 1
   val padding = false
   backends foreach {backend =>
-    for ( tPut <- List( 1, 2 ) ) {
-      for ( inputParam <- List( 3, 5, 3, 5 ).zip( List( 5, 9, 8, 8 ) ) ) {
+    for ( tPut <- List( 1 ) ) {
+      for ( inputParam <- List( 3 ).zip( List( 5 ) ) ) {
         val imgSize = inputParam._2
         val outFormat = ( inputParam._1, inputParam._1, inSize )
         it should s"buffer inputs on a layer with tPut = $tPut and $inputParam using $backend" in {

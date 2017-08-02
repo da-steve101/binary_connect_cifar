@@ -61,7 +61,7 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
   // just attach some default values
   for ( i <- 0 until outSize ) {
     for ( j <- 0 until grpSize )
-      vecOut( i*grpSize + j ) := 0.U
+      vecOut( i*grpSize + j ) := windowRegs( i % actualWindowSize )( j )
   }
 
   /** Calculate the offset from which to send the data this cycle
