@@ -61,9 +61,16 @@ class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, 
   if ( debug )
     printf( "nextData = %d\n", nextData )
 
+  val bufferSize = {
+    if ( throughput < 1 )
+      imgSize
+    else
+      ( imgSize / throughput ).toInt
+  }
+  val remainder = ( imgSize - bufferSize * throughput ).toInt
+
   // buffer the image rows
-  def getMemBuffers( inputData : Vec[T], bufferSize : Int, nextData : Bool ) : List[(Vec[T], Bool)] = {
-    val remainder = ( imgSize - bufferSize * throughput ).toInt
+  def getMemBuffers( inputData : Vec[T], nextData : Bool ) : List[(Vec[T], Bool)] = {
 
     val memBuffers = ArrayBuffer[(Vec[T], Bool)]()
     memBuffers += { ( inputData, nextData) }// this is the most recent row
@@ -76,11 +83,15 @@ class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, 
       // delay the input by one cycle
       val lastReg = lastInput.map( x => RegEnable( x, mb._2 ) )
       // combine together
-      val lastComb = lastReg ++ lastInput
+      val lastComb = lastInput ++ lastReg
       // pick the shifted data so it aligns with the imgSize
       val chosenVec = ( 0 until lastInput.size ).map( i => {
-        lastComb( lastInput.size + i - remainder )
+        lastComb( i + remainder )
       }).reduce( ( a, b ) => Vec( a ++ b ) )
+      printf( "chosenVec = " )
+      for ( v <- chosenVec )
+        printf( "%d, ", v )
+      printf( "\n" )
       // finally feed into the next membuffer
       val mbData = MemShiftRegister( chosenVec, bufferSize, mb._2 )
       // shift valid with it
@@ -91,14 +102,8 @@ class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, 
     memBuffers.toList
   }
 
-  val bufferSize = {
-    if ( throughput < 1 )
-      imgSize
-    else
-      ( imgSize / throughput ).toInt
-  }
 
-  val memBuffers = getMemBuffers( inQueue.bits, bufferSize, nextData )
+  val memBuffers = getMemBuffers( inQueue.bits, nextData )
 
   override def latency : Int = {
     // can define it ...
@@ -108,10 +113,10 @@ class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, 
 
   /** Responsible for buffering a vec that has multiple outputs
     */
-  def bufferVec( vecIn : Vec[T], vld : Bool, stride : Int ) : (Vec[T], Bool) = {
+  def bufferVec( vecIn : Vec[T], vld : Bool, stride : Int, bufferOffset : Int ) : (Vec[T], Bool) = {
     // consider stride and throughput ( is vec size )
 
-    val sldWin = Module( new SlidingWindow( dtype.cloneType, outFormat._3, noIn, outFormat._2, stride ) )
+    val sldWin = Module( new SlidingWindow( dtype.cloneType, outFormat._3, noIn, outFormat._2, stride, bufferOffset ) )
     printf( "sldWin.dataIn( %d ) = ", vld )
     for ( v <- vecIn )
       printf( "%d, ", v )
@@ -122,7 +127,8 @@ class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, 
     ( sldWin.io.dataOut.bits, sldWin.io.dataOut.valid )
   }
 
-  val joinedVecs = memBuffers.map( mb => bufferVec( mb._1, mb._2, stride ) )
+  val buffOffs = ( 0 until memBuffers.size ).map( i => ( i*remainder ) % throughput.toInt ).toList
+  val joinedVecs = memBuffers.zip( buffOffs ).map( z => bufferVec( z._1._1, z._1._2, stride, z._2 ) )
   val grpedVecs = joinedVecs.map( _._1 ).map( jv => jv.grouped( outFormat._2*outFormat._3 ).toList )
   val dataOut = ( 0 until noOut ).map( i => { grpedVecs.map( jv => jv( i ) ) } ).toList
 

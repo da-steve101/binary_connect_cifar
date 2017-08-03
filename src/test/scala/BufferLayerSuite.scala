@@ -51,7 +51,7 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
   var imgCol = 0
   println( "noConvs = " + noConvs )
   while ( convCount < noConvs ) {
-    val vld = peek( c.io.dataIn.ready ) == 1
+    val vld = ( peek( c.io.dataIn.ready ) == 1 ) // && ( myRand.nextInt( 5 ) != 0 )
     println( "vld = " + vld )
     poke( c.io.dataOut.ready, true )
     poke( c.io.dataIn.valid, vld )
@@ -95,8 +95,8 @@ class BufferLayerSuite extends ChiselFlatSpec {
   val stride = 1
   val padding = false
   backends foreach {backend =>
-    for ( tPut <- List( 2 ) ) {
-      for ( inputParam <- List( 3 ).zip( List( 5 ) ) ) {
+    for ( tPut <- List( 1, 2 ) ) {
+      for ( inputParam <- List( 3, 5, 3, 5 ).zip( List( 5, 9, 8, 8 ) ) ) {
         val imgSize = inputParam._2
         val outFormat = ( inputParam._1, inputParam._1, inSize )
         it should s"buffer inputs on a layer with tPut = $tPut and $inputParam using $backend" in {
