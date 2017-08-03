@@ -12,25 +12,31 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
   val myRand = new Random
   val genData = ( 0 until c.inSize * cycs ).map( i => {
     ( 0 until c.grpSize ).map( j => {
-      BigInt( myRand.nextInt( 1 << 7 ) )
+      BigInt( myRand.nextInt( 1 << 7 ) ) // ( i * c.grpSize + j ) % ( 1 << 7 ))
     }).toList
   }).toList
   val dataGrped = genData.grouped( c.inSize ).toList
   var outIdx = 0
   var vldCnt = 0
   var inIdx = 0
+  var prevGrp = dataGrped( inIdx ).map( x => List.fill( x.size ) { BigInt( 255 ) } )
   while ( inIdx < dataGrped.size ) {
-    val d = dataGrped( inIdx )
+    val newGrp = dataGrped( inIdx )
+    val d = prevGrp.takeRight( c.bufferOffset ) ++ newGrp.take( c.inSize - c.bufferOffset )
     val data = d.reduce( _ ++ _ ).toIndexedSeq.reverse
     for ( i <- 0 until data.size )
       poke( c.io.dataIn.bits( i ), data( i ) )
     val vld = ( myRand.nextInt( 5 ) != 0 )
     poke( c.io.dataIn.valid, vld )
-    if ( vld )
+    if ( vld ) {
       inIdx += 1
+      prevGrp = newGrp
+    }
     step( 1 )
     val vldMsk = peek( c.io.vldMsk )
-    if ( peek( c.io.dataOut.valid ) == 1 ) {
+    val dataout = peek( c.io.dataOut.bits )
+    val vldOut = peek( c.io.dataOut.valid )
+    if ( vldOut == 1 ) {
       vldCnt += 1
       for ( idx <- 0 until c.noOut ) {
         if ( vldMsk( c.noOut - 1 - idx ) == 1 ) {
@@ -61,11 +67,13 @@ class SlidingWindowSuite extends ChiselFlatSpec {
         for ( inSize <- inSizes ) {
           for ( windowSize <- windowSizes ) {
             for ( stride <- strides ) {
-              println( "grpSize = " + grpSize + ", inSize = " + inSize +
-                ", windowSize = " + windowSize + ", stride = " + stride )
-              Driver(() => {
-                new SlidingWindow( genType, grpSize, inSize, windowSize, stride )
-              }, backend )( c => new SlidingWindowTests( c ) ) should be (true)
+              for ( bufferOffset <- ( 1 until inSize ) ) {
+                println( "grpSize = " + grpSize + ", inSize = " + inSize + ", windowSize = " +
+                  windowSize + ", stride = " + stride + ", bufferOffset = " + bufferOffset )
+                Driver(() => {
+                  new SlidingWindow( genType, grpSize, inSize, windowSize, stride, bufferOffset )
+                }, backend )( c => new SlidingWindowTests( c ) ) should be (true)
+              }
             }
           }
         }

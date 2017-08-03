@@ -4,8 +4,8 @@ package binconcifar
 import chisel3._
 import chisel3.util._
 
-class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
-  val inSize : Int, val windowSize : Int, val stride : Int ) extends Module {
+class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int, val inSize : Int,
+  val windowSize : Int, val stride : Int, val bufferOffset : Int = 0 ) extends Module {
 
   /* Takes inputs in raw numbers
    * These numbers are grouped into pixels of grpSize
@@ -25,10 +25,6 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
   val effWindowSize = windowSize + ( noOut - 1 ) * stride
   // calculate the actual window size by rounding up so that it is a multiple of inSize and stride
   val actualWindowSize = math.ceil( effWindowSize.toDouble / minWinSize ).toInt * minWinSize
-  // calculate the number of cycles it takes to fill the window
-  val noInBlocks = actualWindowSize / inSize
-  // calculate how many cycles to fill the first window
-  val windowFilled = math.ceil( windowSize.toDouble / inSize ).toInt
 
   val io = IO( new Bundle {
     val dataIn = Input( Valid( Vec( inSize * grpSize, genType.cloneType ) ))
@@ -37,7 +33,7 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
   })
 
   // store data in registers
-  val windowRegs = List.fill( actualWindowSize ) { List.fill( grpSize ) { Reg( genType.cloneType ) } }
+  val windowRegs = List.fill( actualWindowSize + ( inSize - bufferOffset ) ) { List.fill( grpSize ) { Reg( genType.cloneType ) } }
   // for the first inSize regs, take directly from the input
   for ( i <- 0 until inSize ) {
     for ( j <- 0 until grpSize ) {
@@ -48,7 +44,7 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
   }
 
   // for the rest of the registers, shift the inputs along depending on the rate of input
-  for ( i <- 0 until actualWindowSize - inSize ) {
+  for ( i <- 0 until windowRegs.size - inSize ) {
     for ( j <- 0 until grpSize ) {
       when ( io.dataIn.valid ) {
         windowRegs( i + inSize )( j ) := windowRegs( i )( j )
@@ -61,7 +57,7 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
   // just attach some default values
   for ( i <- 0 until outSize ) {
     for ( j <- 0 until grpSize )
-      vecOut( i*grpSize + j ) := windowRegs( i % actualWindowSize )( j )
+      vecOut( i*grpSize + j ) := windowRegs( i % actualWindowSize )( j ) // TODO: this should be zero or some constant value
   }
 
   /** Calculate the offset from which to send the data this cycle
@@ -72,11 +68,11 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
 
     val pureOffsets = ( 0 until uniquePos ).map( x => {
       // total number of inputs recieved so far
-      val noNums = math.ceil( (x * stride + windowSize.toDouble ) / inSize ).toInt * inSize
+      val noNums = math.ceil( (x * stride + windowSize.toDouble + bufferOffset ) / inSize ).toInt * inSize - bufferOffset
       // offset to nearest stride
       val winOff = noNums - ( x * stride + windowSize.toDouble )
       // find the number the counter is for input x
-      val cntrPosOff = x * stride - inSize + ( windowSize % inSize)
+      val cntrPosOff = x * stride - inSize + ( windowSize % inSize) + bufferOffset
       // calculate the cycle offset
       val intY = math.ceil( cntrPosOff.toDouble / inSize ).toInt
       // calculate the bit offset
@@ -95,7 +91,9 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
     */
   private def getStrideCntr() : ( UInt, Bool, UInt ) = {
     // calculate the number of cycles to fill the effective windowSize
-    val effWindowFilled = math.ceil( effWindowSize.toDouble / inSize ).toInt
+    val effWindowFilled = math.ceil( ( effWindowSize.toDouble + bufferOffset ) / inSize ).toInt
+    // calculate how many cycles to fill the first window
+    val windowFilled = math.ceil( ( windowSize.toDouble + bufferOffset ) / inSize ).toInt
     // a counter to count for initialization
     val cntr = Counter( io.dataIn.valid, effWindowFilled + 1 )
     // a register to check when there is enough data in the window to start outputting
@@ -114,7 +112,7 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
     val vldMsks = List.fill( noOut ) { RegInit( false.B ) }
     for ( idx <- 0 until noOut ) {
       // set up trigger to indicate when each output is initialized
-      val cntrTrigger = math.ceil( ( windowSize + idx * stride.toDouble ) / inSize ).toInt - 1
+      val cntrTrigger = math.ceil( ( windowSize + bufferOffset + idx * stride.toDouble ) / inSize ).toInt - 1
       val triggerReg = RegInit( (cntrTrigger <= 0).B )
       val triggerCond = ( cntr._1 >= cntrTrigger.U )
       when( triggerCond & io.dataIn.valid ) {
@@ -161,10 +159,12 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int,
 
   // assign the output
   val vecSize = windowSize * grpSize
+  val idxWidth = log2Up( windowRegs.size*grpSize ).W
+
   for ( idx <- 0 until noOut ) {
     val windStart = idx * stride * grpSize
-    val highNum = ( vecSize - 1 + windStart ).U( log2Up( actualWindowSize*grpSize ).W ) + strideCntr._3
-    val lowNum = windStart.U( log2Up( actualWindowSize*grpSize ).W ) + strideCntr._3
+    val highNum = ( vecSize - 1 + windStart ).U( idxWidth ) + strideCntr._3
+    val lowNum = windStart.U( idxWidth ) + strideCntr._3
     assert( highNum >= lowNum, "High num should be greater than low num" )
     DynamicVecAssign( vecOut, ( vecSize * ( idx + 1 ) - 1 ).U, ( vecSize * idx ).U,
       windowComb, highNum, lowNum )
