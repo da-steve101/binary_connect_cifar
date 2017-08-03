@@ -55,9 +55,9 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
     println( "vld = " + vld )
     poke( c.io.dataOut.ready, true )
     poke( c.io.dataIn.valid, vld )
-    for ( i <- 0 until c.throughput.toInt ) {
+    for ( i <- 0 until c.noOut ) {
       for ( j <- 0 until c.outFormat._3 )
-        poke( c.io.dataIn.bits( i*c.outFormat._3 + j ), img( imgRow )( imgCol )(j) )
+        poke( c.io.dataIn.bits( ( c.noOut - 1 - i ) * c.outFormat._3 + j ), img( imgRow )( imgCol )(j) )
       imgCol += 1
       if ( imgCol == imgSize ) {
         imgCol = 0
@@ -90,12 +90,12 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
 
 class BufferLayerSuite extends ChiselFlatSpec {
   behavior of "BufferLayer"
-  val inSize = 3
+  val inSize = 1
   val qSize = 10
   val stride = 1
   val padding = false
   backends foreach {backend =>
-    for ( tPut <- List( 1 ) ) {
+    for ( tPut <- List( 2 ) ) {
       for ( inputParam <- List( 3 ).zip( List( 5 ) ) ) {
         val imgSize = inputParam._2
         val outFormat = ( inputParam._1, inputParam._1, inSize )
