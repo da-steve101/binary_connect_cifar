@@ -54,10 +54,11 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int, val inSize : I
 
   // a vector to assign the output to
   val vecOut = Wire( Vec( outSize * grpSize, genType.cloneType ) )
+  val outDefault = Reg( genType.cloneType )
   // just attach some default values
   for ( i <- 0 until outSize ) {
     for ( j <- 0 until grpSize )
-      vecOut( i*grpSize + j ) := windowRegs( i % actualWindowSize )( j ) // TODO: this should be zero or some constant value
+      vecOut( i*grpSize + j ) := outDefault
   }
 
   /** Calculate the offset from which to send the data this cycle

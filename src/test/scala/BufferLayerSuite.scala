@@ -31,13 +31,23 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
     imData
   })
 
-  val padSize = (convSize - 1)/2
+  val convWin = (convSize - 1)/2
+  val padSize = {
+    if ( c.padding )
+      0
+    else
+      convWin
+  }
 
   val convOut = ( padSize until imgSize - padSize by stride ).map( xIdx => {
     ( padSize until imgSize - padSize by stride ).map( yIdx => {
-      ( -padSize to padSize ).map( cx => {
-        ( -padSize to padSize ).map( cy => {
-          img( xIdx + cx )( yIdx + cy )
+      ( -convWin to convWin ).map( cx => {
+        ( -convWin to convWin ).map( cy => {
+          if ( xIdx + cx >= 0 && xIdx + cx < imgSize &&
+            yIdx + cy >= 0 && yIdx + cy < imgSize )
+            img( xIdx + cx )( yIdx + cy ).toList
+          else
+            List.fill( c.grpSize ) { BigInt( 0 ) } // pad with zeros
         })
       })
     })
@@ -90,19 +100,30 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
 
 class BufferLayerSuite extends ChiselFlatSpec {
   behavior of "BufferLayer"
-  val inSize = 1
+  val grpSizes = List( 1, 2, 3, 5, 8 )
   val qSize = 10
-  val stride = 1
-  val padding = false
+  val strides = List( 1 ) //, 2, 3, 4 )
+  val paddings = List( false, true )
+  val tPuts = List( 1, 2 )
+  val convImgComb = List( ( 3, 5 ), ( 5, 9 ),  ( 3, 8 ),  ( 5, 8 ) )
   backends foreach {backend =>
-    for ( tPut <- List( 1, 2 ) ) {
-      for ( inputParam <- List( 3, 5, 3, 5 ).zip( List( 5, 9, 8, 8 ) ) ) {
-        val imgSize = inputParam._2
-        val outFormat = ( inputParam._1, inputParam._1, inSize )
-        it should s"buffer inputs on a layer with tPut = $tPut and $inputParam using $backend" in {
-          Driver(() => {
-            new BufferLayer( imgSize, inSize, outFormat, qSize, stride, padding, tPut )
-          }, backend )( c => new BufferLayerTests( c ) ) should be (true)
+    it should s"buffer inputs on a layer using $backend" in {
+      for ( grpSize <- grpSizes ) {
+        for ( stride <- strides ) {
+          for ( padding <- paddings ) {
+            for ( tPut <- tPuts ) {
+              for ( inputParam <- convImgComb ) {
+                val imgSize = inputParam._2
+                val outFormat = ( inputParam._1, inputParam._1, grpSize )
+                println( "imgSize = " + imgSize + ", grpSize = " + grpSize + ", outFormat = " +
+                  outFormat + ", qSize = " + qSize + ", stride = " + stride + ", padding = " +
+                  padding + ", tPut = " + tPut )
+                Driver(() => {
+                  new BufferLayer( imgSize, grpSize, outFormat, qSize, stride, padding, tPut )
+                }, backend )( c => new BufferLayerTests( c ) ) should be (true)
+              }
+            }
+          }
         }
       }
     }

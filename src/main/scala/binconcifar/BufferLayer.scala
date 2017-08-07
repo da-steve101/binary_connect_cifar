@@ -15,8 +15,8 @@ object BufferLayer {
   }
 }
 
-class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, Int), qSize : Int,
-  stride : Int, padding : Boolean, tPut : Double ) extends NNLayer( tPut, grpSize,
+class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, Int, Int), qSize : Int,
+  val stride : Int, val padding : Boolean, tPut : Double ) extends NNLayer( tPut, grpSize,
     outFormat._1 * outFormat._2 * outFormat._3, BufferLayer.calcOutSize( stride, tPut ) ) {
 
   Predef.assert( outFormat._1 == outFormat._2, "Must be square conv for now" )
@@ -129,7 +129,12 @@ class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, 
 
   val buffOffs = ( 0 until memBuffers.size ).map( i => ( i*remainder ) % throughput.toInt ).toList
   val joinedVecs = memBuffers.zip( buffOffs ).map( z => bufferVec( z._1._1, z._1._2, stride, z._2 ) )
-  val grpedVecs = joinedVecs.map( _._1 ).map( jv => jv.grouped( outFormat._2*outFormat._3 ).toList )
+  val grpedVecs = joinedVecs.map( _._1 ).map( jv => {
+    // group to rows
+    jv.grouped( outFormat._2*outFormat._3).toList.map( grp => {
+      grp.grouped( outFormat._3 ).toList // group to pixels
+    })
+  })
   val dataOut = ( 0 until noOut ).map( i => { grpedVecs.map( jv => jv( i ) ) } ).toList
 
   if ( debug ) {
@@ -147,23 +152,63 @@ class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, 
     }
   }
 
-  io.dataOut.bits := Vec( dataOut.map( jv => jv.reduce( _ ++ _ ) ).reverse.reduce( _ ++ _ ) ) 
+  /* encode paddings as:
+   * 0 = no padding
+   * 2 = pad top 2
+   * 1 = pad top 1
+   * -1 = pad bot 1
+   * -2 = pad bot 2
+   * etc ...
+   */
+  def encodePadding( scrIn : Int, scrSize : Int, rowWrap : Int = 1 ) : Int = {
+    if ( scrIn >= 0 )
+      0 // no padding
+    else {
+      val padNeeded = ( scrSize - 1 )/2
+      val tmp = scrIn + padNeeded
+      if ( tmp >= 0 )
+        padNeeded - tmp
+      else
+        -( padNeeded + tmp ) - 1 + ( 1 - rowWrap )
+    }
+  }
 
-  def getValid( nxt : Bool ) : ( Bool, Vec[Bool] ) = {
+  def getValid( nxt : Bool ) : ( Bool, Vec[Bool], Vec[SInt], Vec[SInt] ) = {
     // calculate the number of inputs in an image
-    val noImgPos = math.ceil( imgSize*imgSize.toDouble / noOut ).toInt
+    val noImgPos = math.ceil( imgSize*imgSize.toDouble / ( noOut * stride ) ).toInt
     val imgCntr = Counter( nxt, noImgPos )
 
     val padSize = ( outFormat._2 - 1 )/ 2
     // the vld positions when finishing a conv in a row
-    val imgRow = List.fill( outFormat._2 - 1 ) { false } ++ List.fill( imgSize - outFormat._2 + 1  ) { true }
+    val offsetDim1 = {
+      if ( padding )
+        ( outFormat._1 - 1 )/2  // issue here when img loops
+      else
+        outFormat._1 - 1
+    }
+
+    val offsetDim2 = {
+      if ( padding )
+        0
+      else
+        outFormat._2 - 1
+    }
+
+    val imgRow = List.fill( offsetDim2 ) { false } ++ List.fill( imgSize - offsetDim2  ) { true }
+    val imgStart = List.fill( offsetDim1 ) { List.fill( imgSize ) { false } } ++ {
+      if ( padding )
+        List( List.fill( padSize ) { false } ++ List.fill( imgSize - padSize ) { true } )
+      else
+        List[List[Boolean]]()
+    }
     // the vld positions when finishing a conv for the whole image
-    val img = List.fill( outFormat._1 - 1 ) { List.fill( imgSize ) { false } } ++ List.fill( imgSize - outFormat._1 + 1 ) { imgRow }
+    val img =  imgStart ++ List.fill( imgSize - offsetDim1 ) { imgRow }
     // the vld masks when there is more than one output
     val imgMasks = ( 0 until noImgPos ).map( i => {
       val posRng = ( ( i * noOut ) until ( i + 1 )*noOut ).toList
       val imgPos = posRng.map( z => {
-        ( z / imgSize, z % imgSize )
+        val zStride = z * stride
+        ( zStride / imgSize, zStride % imgSize )
       })
       imgPos.map( z => {
         val x = z._1
@@ -182,15 +227,98 @@ class BufferLayer( val imgSize : Int, grpSize : Int, val outFormat : (Int, Int, 
     val imgVldVec = Vec( imgVld.map( _.B ) )
 
     // vld outputs
-    val vldOut = ShiftRegister( imgVldVec( imgCntr._1 ), 2, false.B, nxt )
-    val vldMsk = ShiftRegister( imgMasksVec( imgCntr._1 ), 2, nxt )
+    val vldOut = ShiftRegister( imgVldVec( imgCntr._1 ), 1, false.B, nxt )
+    val vldMsk = ShiftRegister( imgMasksVec( imgCntr._1 ), 1, nxt )
 
-    ( vldOut, vldMsk )
+    val padMask = ( 0 until noImgPos ).map( i => {
+      val posRng = ( ( i * noOut ) until ( i + 1 )*noOut ).toList
+      val imgPos = posRng.map( z => {
+        val zStride = z * stride
+        ( zStride / imgSize, zStride % imgSize )
+      })
+      val padXY = imgPos.map( z => {
+        val y = z._2 - outFormat._2 + 1
+        val rowWrap = {
+          if ( z._2 < ( outFormat._2 - 1 ) / 2 )
+            0
+          else
+            1
+         }
+        val x = z._1 - outFormat._1 + rowWrap
+        val xPad = encodePadding( x, outFormat._1, rowWrap )
+        val yPad = encodePadding( y, outFormat._2 )
+        ( xPad, yPad )
+      }).reverse
+      ( padXY.map( _._1 ), padXY.map( _._2 ) )
+    }).toList
+    println( "padMask = " + padMask )
+    val padMaskVecX = Wire( Vec( noImgPos, Vec( noOut, 0.S( log2Ceil( outFormat._1 ).W ).cloneType ) ) )
+    val padMaskVecY = Wire( Vec( noImgPos, Vec( noOut, 0.S( log2Ceil( outFormat._2 ).W ).cloneType ) ) )
+    for ( i <- 0 until noImgPos ) {
+      for ( j <- 0 until noOut ) {
+        padMaskVecX( i )( j ) := padMask( i )._1( j ).S
+        padMaskVecY( i )( j ) := padMask( i )._2( j ).S
+      }
+    }
+
+    val padMaskXOut = ShiftRegister( padMaskVecX( imgCntr._1 ), 1, nxt )
+    val padMaskYOut = ShiftRegister( padMaskVecY( imgCntr._1 ), 1, nxt )
+
+    ( vldOut, vldMsk, padMaskXOut, padMaskYOut )
   }
 
   val vldCntr = getValid( nextData )
 
-  io.dataOut.valid := vldCntr._1
-  io.vldMask := vldCntr._2
+  val zeroGrp = Wire( Vec( grpSize, dtype.cloneType ) )
+  for ( i <- 0 until grpSize )
+    zeroGrp( i ) := 0.S
+
+  def getPadCond( x : Int, pX : SInt, xSize : Int ) : Bool = {
+    val mp = ( xSize - 1 )/2
+    if ( x < mp ) {
+      ( pX > x.S ) // trigger when pX >= 1
+    } else if ( x > mp ) {
+      ( pX < ( x - xSize + 1 ).S )
+    } else
+        false.B
+  }
+
+  val padXY = vldCntr._3.zip( vldCntr._4 )
+  printf( "padXY = " )
+  for ( xy <- padXY )
+    printf( " (%d, %d), ", xy._1, xy._2 )
+  printf( "\n" )
+  val dataJoined : Vec[T] = {
+    if ( padding ) {
+      val newDataOut = dataOut.zip( padXY ).map( convImg => {
+        val padX = convImg._2._1
+        val padY = convImg._2._2
+        convImg._1.zipWithIndex.map( convRow => {
+          val x = outFormat._1 - convRow._2 - 1
+          convRow._1.zipWithIndex.map( convGrp => {
+            val y = outFormat._2 - convGrp._2 - 1
+            val grpVec = Wire( Vec( grpSize, dtype.cloneType ) )
+            grpVec := convGrp._1
+            val condX = getPadCond( x, padX, outFormat._1 )
+            val condY = getPadCond( y, padY, outFormat._2 )
+            printf( "condX( " + x + " )( " + y + " ) = %d\n", condX )
+            printf( "condY( " + x + " )( " + y + " ) = %d\n", condY )
+            val condXY = RegEnable( condX | condY, vldCntr._1 )
+            when ( condXY ) {
+              grpVec := zeroGrp
+            }
+            grpVec
+          }).reduce( ( a, b ) => Vec( a ++ b ) )
+        }).reduce( ( a, b ) => Vec( a ++ b ) )
+      }).reverse.reduce( ( a, b ) => Vec( a ++ b ) )
+      newDataOut
+    } else {
+      Vec( dataOut.map( jv => jv.map( p => p.reduce( _ ++ _ ) ).reduce( _ ++ _ ) ).reverse.reduce( _ ++ _ ) )
+    }
+  }
+
+  io.dataOut.bits := dataJoined
+  io.dataOut.valid := RegEnable( vldCntr._1, false.B, true.B )
+  io.vldMask := RegEnable( vldCntr._2, true.B )
 
 }
