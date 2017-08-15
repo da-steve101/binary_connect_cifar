@@ -16,6 +16,12 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
     }).toList
   }).toList
   val dataGrped = genData.grouped( c.inSize ).toList
+  val padSize = {
+    if ( c.padding )
+      ( ( c.windowSize - 1 ) / 2 ) + 1
+    else
+      c.windowSize
+  }
   var outIdx = 0
   var vldCnt = 0
   var inIdx = 0
@@ -34,7 +40,6 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
     }
     step( 1 )
     val vldMsk = peek( c.io.vldMsk )
-    val dataout = peek( c.io.dataOut.bits )
     val vldOut = peek( c.io.dataOut.valid )
     if ( vldOut == 1 ) {
       vldCnt += 1
@@ -42,8 +47,9 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
         if ( vldMsk( c.noOut - 1 - idx ) == 1 ) {
           val offset = ( c.noOut - 1 - idx ) * c.windowSize * c.grpSize
           for ( j <- 0 until c.windowSize * c.grpSize ) {
-            val testIdx = outIdx + c.windowSize * c.grpSize - 1 - j
-            expect( c.io.dataOut.bits( offset + j ), genData( testIdx / c.grpSize )( testIdx % c.grpSize ) )
+            val testIdx = outIdx + padSize * c.grpSize - 1 - j
+            if ( testIdx >= 0 )
+              expect( c.io.dataOut.bits( offset + j ), genData( testIdx / c.grpSize )( testIdx % c.grpSize ) )
           }
           outIdx += c.stride * c.grpSize
         }
@@ -61,18 +67,23 @@ class SlidingWindowSuite extends ChiselFlatSpec {
   val inSizes = List( 1, 2, 3, 4 )
   val windowSizes = List( 3, 4, 5, 7, 10 )
   val strides = List( 1, 2, 3, 4 )
+  val paddings = List( false, true )
   backends foreach {backend =>
     it should s"Shift inputs along using $backend" in {
       for ( grpSize <- grpSizes ) {
         for ( inSize <- inSizes ) {
           for ( windowSize <- windowSizes ) {
             for ( stride <- strides ) {
-              for ( bufferOffset <- ( 1 until inSize ) ) {
-                println( "grpSize = " + grpSize + ", inSize = " + inSize + ", windowSize = " +
-                  windowSize + ", stride = " + stride + ", bufferOffset = " + bufferOffset )
-                Driver(() => {
-                  new SlidingWindow( genType, grpSize, inSize, windowSize, stride, bufferOffset )
-                }, backend )( c => new SlidingWindowTests( c ) ) should be (true)
+              val bufferOffsets = ( 0 until inSize ).toList
+              for ( bufferOffset <- bufferOffsets ) {
+                for ( padding <- paddings ) {
+                  println( "grpSize = " + grpSize + ", inSize = " + inSize + ", windowSize = " +
+                    windowSize + ", stride = " + stride + ", bufferOffset = " + bufferOffset +
+                    ", padding = " + padding )
+                  Driver(() => {
+                    new SlidingWindow( genType, grpSize, inSize, windowSize, stride, bufferOffset, padding )
+                  }, backend )( c => new SlidingWindowTests( c ) ) should be (true)
+                }
               }
             }
           }
