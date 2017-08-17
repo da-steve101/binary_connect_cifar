@@ -16,19 +16,15 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
     }).toList
   }).toList
   val dataGrped = genData.grouped( c.inSize ).toList
-  val padSize = {
-    if ( c.padding )
-      ( ( c.windowSize - 1 ) / 2 ) + 1
-    else
-      c.windowSize
-  }
   var outIdx = 0
   var vldCnt = 0
   var inIdx = 0
   var prevGrp = dataGrped( inIdx ).map( x => List.fill( x.size ) { BigInt( 255 ) } )
   while ( inIdx < dataGrped.size ) {
     val newGrp = dataGrped( inIdx )
-    val d = prevGrp.takeRight( c.bufferOffset ) ++ newGrp.take( c.inSize - c.bufferOffset )
+    val windShift = myRand.nextInt( c.stride )
+    val d = prevGrp.takeRight( c.noIgnore ) ++ newGrp.take( c.inSize - c.noIgnore )
+    poke( c.io.windShift, windShift )
     val data = d.reduce( _ ++ _ ).toIndexedSeq.reverse
     for ( i <- 0 until data.size )
       poke( c.io.dataIn.bits( i ), data( i ) )
@@ -47,7 +43,7 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
         if ( vldMsk( c.noOut - 1 - idx ) == 1 ) {
           val offset = ( c.noOut - 1 - idx ) * c.windowSize * c.grpSize
           for ( j <- 0 until c.windowSize * c.grpSize ) {
-            val testIdx = outIdx + padSize * c.grpSize - 1 - j
+            val testIdx = outIdx + ( c.padSize - windShift ) * c.grpSize - 1 - j
             if ( testIdx >= 0 )
               expect( c.io.dataOut.bits( offset + j ), genData( testIdx / c.grpSize )( testIdx % c.grpSize ) )
           }
@@ -80,8 +76,14 @@ class SlidingWindowSuite extends ChiselFlatSpec {
                   println( "grpSize = " + grpSize + ", inSize = " + inSize + ", windowSize = " +
                     windowSize + ", stride = " + stride + ", bufferOffset = " + bufferOffset +
                     ", padding = " + padding )
+                  val displayBefore = {
+                    if ( padding )
+                      ( windowSize - 1 )/2
+                    else
+                      0
+                  }
                   Driver(() => {
-                    new SlidingWindow( genType, grpSize, inSize, windowSize, stride, bufferOffset, padding )
+                    new SlidingWindow( genType, grpSize, inSize, windowSize, stride, bufferOffset, displayBefore )
                   }, backend )( c => new SlidingWindowTests( c ) ) should be (true)
                 }
               }
