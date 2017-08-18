@@ -9,21 +9,17 @@ import scala.collection.mutable.ArrayBuffer
 
 class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
 
-  val stride = 1
-  val padding = false
-  val imgSize = c.imgSize
   val convSize = c.outFormat._2
   val outFormat = c.outFormat
-  val tPut = 1
 
   val myRand = new Random
 
   println( "img = " )
 
-  val img = ( 0 until imgSize ).map( i => {
-    val imData = ( 0 until imgSize ).map( j => {
+  val img = ( 0 until c.imgSize ).map( i => {
+    val imData = ( 0 until c.imgSize ).map( j => {
       ( 0 until outFormat._3 ).map( k => {
-        val tmp = i*imgSize*outFormat._3 + j*outFormat._3 + k
+        val tmp = i*c.imgSize*outFormat._3 + j*outFormat._3 + k
         BigInt( tmp % ( 1 << 7 ) )
       })
     })
@@ -39,12 +35,12 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
       convWin
   }
 
-  val convOut = ( padSize until imgSize - padSize by stride ).map( xIdx => {
-    ( padSize until imgSize - padSize by stride ).map( yIdx => {
+  val convOut = ( padSize until c.imgSize - padSize by c.stride ).map( xIdx => {
+    ( padSize until c.imgSize - padSize by c.stride ).map( yIdx => {
       ( -convWin to convWin ).map( cx => {
         ( -convWin to convWin ).map( cy => {
-          if ( xIdx + cx >= 0 && xIdx + cx < imgSize &&
-            yIdx + cy >= 0 && yIdx + cy < imgSize )
+          if ( xIdx + cx >= 0 && xIdx + cx < c.imgSize &&
+            yIdx + cy >= 0 && yIdx + cy < c.imgSize )
             img( xIdx + cx )( yIdx + cy ).toList
           else
             List.fill( c.grpSize ) { BigInt( 0 ) } // pad with zeros
@@ -55,7 +51,7 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
 
   println( "convOut = " + convOut )
 
-  val noConvs = math.pow( imgSize + 1 - convSize, 2 )
+  val noConvs = convOut.size
   var convCount = 0
   var imgRow = 0
   var imgCol = 0
@@ -65,13 +61,13 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
     println( "vld = " + vld )
     poke( c.io.dataOut.ready, true )
     poke( c.io.dataIn.valid, vld )
-    for ( i <- 0 until c.noOut ) {
+    for ( i <- 0 until c.noIn ) {
       for ( j <- 0 until c.outFormat._3 )
-        poke( c.io.dataIn.bits( ( c.noOut - 1 - i ) * c.outFormat._3 + j ), img( imgRow )( imgCol )(j) )
+        poke( c.io.dataIn.bits( ( c.noIn - 1 - i ) * c.outFormat._3 + j ), img( imgRow )( imgCol )(j) )
       imgCol += 1
-      if ( imgCol == imgSize ) {
+      if ( imgCol == c.imgSize ) {
         imgCol = 0
-        imgRow = ( imgRow + 1 ) % imgSize
+        imgRow = ( imgRow + 1 ) % c.imgSize
       }
     }
     step(1)
@@ -102,10 +98,10 @@ class BufferLayerSuite extends ChiselFlatSpec {
   behavior of "BufferLayer"
   val grpSizes = List( 1, 2, 3, 5, 8 )
   val qSize = 10
-  val strides = List( 1 ) //, 2, 3, 4 )
+  val strides = List( 1, 2, 3, 4 )
   val paddings = List( false, true )
   val tPuts = List( 1, 2 )
-  val convImgComb = List( ( 3, 5 ), ( 5, 9 ),  ( 3, 8 ),  ( 5, 8 ) )
+  val convImgComb = List( ( 3, 5 ), ( 5, 9 ),  ( 3, 8 ), ( 5, 8 ) )
   backends foreach {backend =>
     it should s"buffer inputs on a layer using $backend" in {
       for ( grpSize <- grpSizes ) {

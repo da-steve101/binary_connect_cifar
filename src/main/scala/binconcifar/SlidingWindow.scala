@@ -22,6 +22,8 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int, val inSize : I
   // calculate the number of pixel outputs
   val outSize = noOut * windowSize
   val minWinSize = BufferLayer.lcm( stride, inSize )
+  // the max stride counter
+  val cntrMax = minWinSize / inSize
 
   val io = IO( new Bundle {
     val dataIn = Input( Valid( Vec( inSize * grpSize, genType.cloneType ) ))
@@ -32,7 +34,6 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int, val inSize : I
 
   val padSize = windowSize - displayBefore
   Predef.assert( padSize > 0, "displayBefore must be less than windowSize" )
-  Predef.assert( noIgnore < inSize, "noIgnore must be less than inSize" )
 
   // calculate the effective window size by the number of pixels that have to be accessed each cycle
   val effWindowSize = windowSize + ( noOut - 1 ) * stride
@@ -79,8 +80,8 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int, val inSize : I
       val noNums = math.ceil( (x * stride + padSize.toDouble + noIgnore ) / inSize ).toInt * inSize - noIgnore
       // offset to nearest stride
       val winOff = noNums - ( x * stride + padSize )
-      // find the number the counter is for input x
-      val cntrPosOff = x * stride - inSize + ( padSize % inSize) + noIgnore
+      // find the number the counter is for input x after init is done
+      val cntrPosOff = x * stride - inSize + ( padSize + noIgnore ) % inSize
       // calculate the cycle offset
       val intY = math.ceil( cntrPosOff.toDouble / inSize ).toInt
       // calculate the bit offset
@@ -109,9 +110,8 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int, val inSize : I
       initDone := initDone | ( cntr._1 >= ( windowFilled - 1 ).U )
     }
 
-    val cntrMax = minWinSize / inSize
-
     val res = calcStrideOffsets()
+    println( "strideOffset = " + res )
     val strideOffsets = res._1
     val minStart = res._2
 
