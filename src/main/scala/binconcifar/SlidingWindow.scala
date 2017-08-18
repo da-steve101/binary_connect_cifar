@@ -27,7 +27,7 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int, val inSize : I
 
   val io = IO( new Bundle {
     val dataIn = Input( Valid( Vec( inSize * grpSize, genType.cloneType ) ))
-    val windShift = Input( UInt( log2Up( minWinSize ).W ) )
+    val windShift = Input( UInt( log2Up( minWinSize * grpSize ).W ) )
     val dataOut = Output( Valid( Vec( outSize * grpSize, genType.cloneType ) ))
     val vldMsk = Output( Vec( noOut, Bool() ) )
   })
@@ -173,7 +173,7 @@ class SlidingWindow[ T <: Bits ]( genType : T, val grpSize : Int, val inSize : I
     val highNum = ( vecSize - 1 + windStart ).U( idxWidth ) + strideCntr._3 + io.windShift
     val lowNum = windStart.U( idxWidth ) + strideCntr._3 + io.windShift
     assert( highNum >= lowNum, "High num should be greater than low num" )
-    assert( highNum < windowRegs.size.U, "High num should be in window range" )
+    assert( highNum < windowComb.size.U, "High num should be in window range" )
     DynamicVecAssign( vecOut, ( vecSize * ( idx + 1 ) - 1 ).U, ( vecSize * idx ).U,
       windowComb, highNum, lowNum )
   }

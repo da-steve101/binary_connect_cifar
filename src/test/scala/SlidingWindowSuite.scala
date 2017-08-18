@@ -22,7 +22,7 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
   var prevGrp = dataGrped( inIdx ).map( x => List.fill( x.size ) { BigInt( 255 ) } )
   while ( inIdx < dataGrped.size ) {
     val newGrp = dataGrped( inIdx )
-    val windShift = myRand.nextInt( c.stride )
+    val windShift = myRand.nextInt( c.stride * c.grpSize )
     val d = prevGrp.takeRight( c.noIgnore ) ++ newGrp.take( c.inSize - c.noIgnore )
     poke( c.io.windShift, windShift )
     val data = d.reduce( _ ++ _ ).toIndexedSeq.reverse
@@ -43,7 +43,7 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
         if ( vldMsk( c.noOut - 1 - idx ) == 1 ) {
           val offset = ( c.noOut - 1 - idx ) * c.windowSize * c.grpSize
           for ( j <- 0 until c.windowSize * c.grpSize ) {
-            val testIdx = outIdx + ( c.padSize - windShift ) * c.grpSize - 1 - j
+            val testIdx = outIdx + c.padSize * c.grpSize - windShift - 1 - j
             if ( testIdx >= 0 )
               expect( c.io.dataOut.bits( offset + j ), genData( testIdx / c.grpSize )( testIdx % c.grpSize ) )
           }
