@@ -28,7 +28,7 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
 
   Predef.assert( outFormat._1 == outFormat._2, "Must be square conv for now" )
 
-  val debug = false
+  val debug = true
 
   // calculate the vlds and padding
   val padSize_1 = ( outFormat._1 - 1 )/ 2
@@ -78,17 +78,28 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
   if ( debug )
     printf( "nextData = %d\n", nextData )
 
+  /** Count "cnt" vld's and then output true
+    */
+  def initFlagCount( vld : Bool, cnt : Int ) : Bool = {
+    val vldCnt = Counter( vld, cnt )
+    val doneFlag = RegInit( false.B )
+    when ( vldCnt._2 ) {
+      doneFlag := true.B
+    }
+    doneFlag
+  }
+
   /* This method buffers image rows
    */
   def getMemBuffers( inputData : Vec[T], nextData : Bool ) : List[(Vec[T], Bool)] = {
 
     val memBuffers = ArrayBuffer[(Vec[T], Bool)]()
-    memBuffers += { ( inputData, nextData) } // this is the most recent row
+    memBuffers += { ( inputData, nextData ) } // this is the most recent row
 
     // create a mem to buffer the data to increase the latency to the correct amount
     while ( memBuffers.size < outFormat._1 ) {
       val mb = memBuffers.last
-      printf( "mb = " )
+      printf( "mb( %d ) = ", mb._2 )
       for ( d <- mb._1 )
         printf( "%d, ", d )
       printf( "\n" )
@@ -102,13 +113,17 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
       val chosenVec = ( 0 until lastInput.size ).map( i => {
         lastComb( i + remainder )
       }).reduce( ( a, b ) => Vec( a ++ b ) )
-      printf( "chosenVec = " )
+      printf( "chosenVec( %d ) = ", mb._2 )
       for ( v <- chosenVec )
         printf( "%d, ", v )
       printf( "\n" )
       // finally feed into the next membuffer
-      val mbData = MemShiftRegister( chosenVec, bufferSize, mb._2 )
-      val vldSr = ShiftRegister( mb._2, bufferSize, false.B, true.B )
+      val mbData = ShiftRegister( chosenVec, bufferSize, mb._2 ) // MemShiftRegister( chosenVec, bufferSize, mb._2 )
+      val vldSr = nextData & initFlagCount( mb._2, bufferSize )
+      printf( "mbData( %d ) = ", vldSr )
+      for ( d <- mbData )
+        printf( "%d, ", d )
+      printf( "\n" )
       memBuffers += { ( mbData, vldSr ) }
     }
 
@@ -282,7 +297,7 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
       imgMasksOut( i ) := imgMasksVec( imgCntr._1 )( i ) & initMasksDone( i )
 
     val vldMsk = ShiftRegister( imgMasksOut, 1, nxt )
-    ( vldOut, vldMsk )
+    ( vldOut & nxt, vldMsk )
   }
 
   val padVals = ArrayBuffer[ArrayBuffer[(Int, Int)]]()

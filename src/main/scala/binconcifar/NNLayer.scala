@@ -24,8 +24,8 @@ abstract class NNLayer( val throughput : Double, inSize : Int,
   val noIn = ( throughput ).toInt
 
   val io = IO(new Bundle {
-    val dataIn = Flipped(Decoupled( Vec( inSize * noIn, dtype ) ))
-    val dataOut = Decoupled( Vec( outSize * noOut, dtype ) )
+    val dataIn = Flipped(Decoupled( Vec( inSize * noIn, dtype.cloneType ) ))
+    val dataOut = Decoupled( Vec( outSize * noOut, dtype.cloneType ) )
     val vldMask = Output( Vec( noOut, Bool() ) )
   })
 

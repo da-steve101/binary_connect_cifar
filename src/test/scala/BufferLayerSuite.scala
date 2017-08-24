@@ -13,6 +13,7 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
   val outFormat = c.outFormat
 
   val myRand = new Random
+  val noImgs = 1
 
   println( "img = " )
 
@@ -56,18 +57,20 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
   var imgRow = 0
   var imgCol = 0
   println( "noConvs = " + noConvs )
-  while ( convCount < noConvs ) {
-    val vld = ( peek( c.io.dataIn.ready ) == 1 ) // && ( myRand.nextInt( 5 ) != 0 )
+  while ( convCount < noImgs * noConvs ) { //  TODO: continue to next img
+    val vld = ( peek( c.io.dataIn.ready ) == 1 ) && ( myRand.nextInt( 5 ) != 0 )
     println( "vld = " + vld )
     poke( c.io.dataOut.ready, true )
     poke( c.io.dataIn.valid, vld )
     for ( i <- 0 until c.noIn ) {
       for ( j <- 0 until c.outFormat._3 )
         poke( c.io.dataIn.bits( ( c.noIn - 1 - i ) * c.outFormat._3 + j ), img( imgRow )( imgCol )(j) )
-      imgCol += 1
-      if ( imgCol == c.imgSize ) {
-        imgCol = 0
-        imgRow = ( imgRow + 1 ) % c.imgSize
+      if ( vld ) {
+        imgCol += 1
+        if ( imgCol == c.imgSize ) {
+          imgCol = 0
+          imgRow = ( imgRow + 1 ) % c.imgSize
+        }
       }
     }
     step(1)
@@ -78,13 +81,13 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
       val vldMsk = peek( c.io.vldMask( i ) ) == 1
       println( "vldMsk( " + i + " ) = " + vldMsk )
       if ( outVld ) {
-        if ( vldMsk && convCount < noConvs ) {
+        if ( vldMsk ) {
           val offset = i * c.outFormat._1 * c.outFormat._2 * c.outFormat._3
           for ( j <- 0 until outFormat._1 ) {
             for ( k <- 0 until outFormat._2 ) {
               for ( l <- 0 until c.outFormat._3 )
                 expect( c.io.dataOut.bits( offset + j*c.outFormat._2*c.outFormat._3 + k*c.outFormat._3 + l ),
-                  convOut( convCount )( c.outFormat._1 - 1 - j )( c.outFormat._2 - 1 - k )( l ) )
+                  convOut( convCount % noConvs )( c.outFormat._1 - 1 - j )( c.outFormat._2 - 1 - k )( l ) )
             }
           }
           convCount += 1
