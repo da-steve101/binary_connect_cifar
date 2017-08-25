@@ -10,12 +10,12 @@ import scala.collection.mutable.ArrayBuffer
 class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) {
   val cycs = 5*c.windowSize
   val myRand = new Random
-  val genData = ( 0 until c.inSize * cycs ).map( i => {
+  val genData = ( 0 until c.groupsPerCycle * cycs ).map( i => {
     ( 0 until c.grpSize ).map( j => {
       BigInt( myRand.nextInt( 1 << 7 ) ) // ( i * c.grpSize + j ) % ( 1 << 7 ))
     }).toList
   }).toList
-  val dataGrped = genData.grouped( c.inSize ).toList
+  val dataGrped = genData.grouped( c.groupsPerCycle ).toList
   var outIdx = 0
   var vldCnt = 0
   var inIdx = 0
@@ -23,7 +23,7 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
   while ( inIdx < dataGrped.size ) {
     val newGrp = dataGrped( inIdx )
     val windShift = myRand.nextInt( c.stride * c.grpSize )
-    val d = prevGrp.takeRight( c.noIgnore ) ++ newGrp.take( c.inSize - c.noIgnore )
+    val d = prevGrp.takeRight( c.noIgnore ) ++ newGrp.take( c.groupsPerCycle - c.noIgnore )
     poke( c.io.windShift, windShift )
     val data = d.reduce( _ ++ _ ).toIndexedSeq.reverse
     for ( i <- 0 until data.size )
@@ -39,9 +39,9 @@ class SlidingWindowTests( c : SlidingWindow[UInt] ) extends PeekPokeTester( c ) 
     val vldOut = peek( c.io.dataOut.valid )
     if ( vldOut == 1 ) {
       vldCnt += 1
-      for ( idx <- 0 until c.noOut ) {
-        if ( vldMsk( c.noOut - 1 - idx ) == 1 ) {
-          val offset = ( c.noOut - 1 - idx ) * c.windowSize * c.grpSize
+      for ( idx <- 0 until c.noWindowOut ) {
+        if ( vldMsk( c.noWindowOut - 1 - idx ) == 1 ) {
+          val offset = ( c.noWindowOut - 1 - idx ) * c.windowSize * c.grpSize
           for ( j <- 0 until c.windowSize * c.grpSize ) {
             val testIdx = outIdx + c.padSize * c.grpSize - windShift - 1 - j
             if ( testIdx >= 0 )
@@ -60,20 +60,20 @@ class SlidingWindowSuite extends ChiselFlatSpec {
   behavior of "SlidingWindow"
   val genType = 0.U( 8.W )
   val grpSizes = List( 1, 2, 3 )
-  val inSizes = List( 1, 2, 3, 4 )
+  val groupsPerCycles = List( 1, 2, 3, 4 )
   val windowSizes = List( 3, 4, 5, 7, 10 )
   val strides = List( 1, 2, 3, 4 )
   val paddings = List( false, true )
   backends foreach {backend =>
     it should s"Shift inputs along using $backend" in {
       for ( grpSize <- grpSizes ) {
-        for ( inSize <- inSizes ) {
+        for ( groupsPerCycle <- groupsPerCycles ) {
           for ( windowSize <- windowSizes ) {
             for ( stride <- strides ) {
-              val bufferOffsets = ( 0 until inSize ).toList
+              val bufferOffsets = ( 0 until groupsPerCycle ).toList
               for ( bufferOffset <- bufferOffsets ) {
                 for ( padding <- paddings ) {
-                  println( "grpSize = " + grpSize + ", inSize = " + inSize + ", windowSize = " +
+                  println( "grpSize = " + grpSize + ", groupsPerCycle = " + groupsPerCycle + ", windowSize = " +
                     windowSize + ", stride = " + stride + ", bufferOffset = " + bufferOffset +
                     ", padding = " + padding )
                   val displayBefore = {
@@ -83,7 +83,7 @@ class SlidingWindowSuite extends ChiselFlatSpec {
                       0
                   }
                   Driver(() => {
-                    new SlidingWindow( genType, grpSize, inSize, windowSize, stride, bufferOffset, displayBefore )
+                    new SlidingWindow( genType, grpSize, groupsPerCycle, windowSize, stride, bufferOffset, displayBefore )
                   }, backend )( c => new SlidingWindowTests( c ) ) should be (true)
                 }
               }
