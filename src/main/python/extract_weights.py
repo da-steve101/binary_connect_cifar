@@ -1,6 +1,5 @@
 #! /usr/bin/python3
 
-import tensorflow as tf
 import numpy as np
 from scipy import signal
 from skimage.measure import block_reduce
@@ -8,8 +7,10 @@ from PIL import Image
 import sys
 import pickle
 import os
+import csv
 
 def get_variables( model_name ):
+    import tensorflow as tf
     config = tf.ConfigProto(allow_soft_placement=True)
     sess = tf.Session( config = config )
     new_saver = tf.train.import_meta_graph("train_out/" + model_name + ".meta")
@@ -50,8 +51,8 @@ def compute_conv( img, conv_weights ):
             conv_window = np.flip( np.flip( tri_weights[:,:,chno,fno], 0 ), 1 )
             ch_sum += signal.convolve2d( img[:,:,chno], conv_window, mode = "same" )
         filter_out += [ ch_sum ]
-    filter_out = np.array( filter_out ) * scaling_factor
-    return np.transpose( filter_out, [ 1, 2, 0 ] )
+    filter_out = np.array( filter_out )
+    return ( np.transpose( filter_out, [ 1, 2, 0 ] ), scaling_factor )
 
 def compute_BN( img, mean, var, gamma, beta ):
     a = gamma / var
@@ -67,13 +68,13 @@ def compute_max_pool( img ):
 def compute_conv_lyr( img, var_dict, idx ):
     lyr = "conv" + str(idx)
     conv_weights = var_dict[lyr]
-    conv_res = compute_conv( img, conv_weights )
+    conv_res, scaling_factor = compute_conv( img, conv_weights )
     bn_res = compute_BN(
         conv_res,
-        var_dict[lyr + '/mean'],
-        var_dict[lyr + '/variance'],
-        var_dict[lyr +'/gamma'],
-        var_dict[lyr + '/beta'] )
+        var_dict[lyr + '/mean'] / scaling_factor,
+        np.sqrt( var_dict[lyr + '/variance'] ),
+        var_dict[lyr +'/gamma'] * scaling_factor,
+        var_dict[lyr + '/beta'])
     relu_res = compute_relu( bn_res )
     return relu_res
 
@@ -122,6 +123,8 @@ def max_pred( pred, labels ):
 if __name__ == "__main__":
     img_names = sys.argv[1:]
     model_name = "model.ckpt-0"
+    output_file = open( "image_predictions.cnn", "w" )
+    wrt = csv.writer( output_file )
     if os.path.exists( model_name + "_dict.pkl" ):
         f = open( model_name + "_dict.pkl", "rb" )
         var_dict = pickle.load( f )
@@ -142,5 +145,7 @@ if __name__ == "__main__":
                "truck" ]
     for img_name in img_names:
         img = get_image( img_name )
+        wrt.writerow( img )
         pred = inference( img, var_dict )
         print( img_name + " is " + max_pred( pred, labels ) )
+    output_file.close()
