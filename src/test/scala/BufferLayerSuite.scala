@@ -28,18 +28,26 @@ class BufferLayerTests( c : BufferLayer ) extends PeekPokeTester( c ) {
     imData
   })
 
-  val convWin = (convSize - 1)/2
-  val padSize = {
+  val convWin = convSize/2
+  val padSize_TL = {
     if ( c.padding )
       0
     else
-      convWin
+      ( convSize - 1)/2
+  } + ( ( convSize + 1 ) % 2 )
+  val padSize_BR = {
+    if ( c.padding )
+      0
+    else
+      ( convSize - 1 )/2
   }
-
-  val convOut = ( padSize until c.imgSize - padSize by c.stride ).map( xIdx => {
-    ( padSize until c.imgSize - padSize by c.stride ).map( yIdx => {
-      ( -convWin to convWin ).map( cx => {
-        ( -convWin to convWin ).map( cy => {
+  println( "convSize = " + convSize )
+  val convOut = ( padSize_TL until c.imgSize - padSize_BR by c.stride ).map( xIdx => {
+    ( padSize_TL until c.imgSize - padSize_BR by c.stride ).map( yIdx => {
+      ( 0 until convSize ).map( cIdxX => {
+        val cx = cIdxX - convWin
+        ( 0 until convSize ).map( cIdxY => {
+          val cy = cIdxY - convWin
           if ( xIdx + cx >= 0 && xIdx + cx < c.imgSize &&
             yIdx + cy >= 0 && yIdx + cy < c.imgSize )
             img( xIdx + cx )( yIdx + cy ).toList
@@ -104,7 +112,7 @@ class BufferLayerSuite extends ChiselFlatSpec {
   val strides = List( 1, 2, 3, 4 )
   val paddings = List( false, true )
   val tPuts = List( 1, 2 )
-  val convImgComb = List( ( 3, 5 ), ( 5, 9 ),  ( 3, 8 ), ( 5, 8 ) )
+  val convImgComb = List( ( 2, 5 ), ( 3, 5 ), ( 5, 9 ), ( 2, 8 ), ( 3, 8 ), ( 5, 8 ) )
   backends foreach {backend =>
     it should s"buffer inputs on a layer using $backend" in {
       for ( grpSize <- grpSizes ) {
@@ -114,12 +122,14 @@ class BufferLayerSuite extends ChiselFlatSpec {
               for ( inputParam <- convImgComb ) {
                 val imgSize = inputParam._2
                 val outFormat = ( inputParam._1, inputParam._1, grpSize )
-                println( "imgSize = " + imgSize + ", grpSize = " + grpSize + ", outFormat = " +
-                  outFormat + ", qSize = " + qSize + ", stride = " + stride + ", padding = " +
-                  padding + ", tPut = " + tPut )
-                Driver(() => {
-                  new BufferLayer( imgSize, grpSize, outFormat, qSize, stride, padding, tPut )
-                }, backend )( c => new BufferLayerTests( c ) ) should be (true)
+                if ( inputParam._1 % 2 == 1 || !padding ) {
+                  println( "imgSize = " + imgSize + ", grpSize = " + grpSize + ", outFormat = " +
+                    outFormat + ", qSize = " + qSize + ", stride = " + stride + ", padding = " +
+                    padding + ", tPut = " + tPut )
+                  Driver(() => {
+                    new BufferLayer( imgSize, grpSize, outFormat, qSize, stride, padding, tPut )
+                  }, backend )( c => new BufferLayerTests( c ) ) should be (true)
+                }
               }
             }
           }

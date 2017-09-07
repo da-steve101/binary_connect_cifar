@@ -6,7 +6,6 @@ import chisel3.util._
 import scala.collection.mutable.ArrayBuffer
 
 object BufferLayer {
-  // cases to consider, stride = 1, tPut = 2, stride = 2, tPut = 3, stride = 2, tPut = 4
   def calcOutSize( stride : Int, tPut : Double ) : Int = {
     if ( tPut >= math.pow( stride, 2 ) )
       ( tPut / math.pow( stride, 2 ) ).toInt
@@ -22,17 +21,28 @@ object BufferLayer {
   * It streams in an image of "imgSize x imgSize x grpSize" and outputs blocks of outFormat
   * every "stride" pixels with or without padding as some throughput "tPut"
   */
-class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, Int, Int), qSize : Int,
-  val stride : Int, val padding : Boolean, tPut : Double ) extends NNLayer( tPut, grpSize,
-    outFormat._1 * outFormat._2 * outFormat._3, BufferLayer.calcOutSize( stride, tPut ) ) {
+class BufferLayer(
+  val imgSize : Int,
+  val grpSize : Int,
+  val outFormat : (Int, Int, Int),
+  qSize : Int,
+  val stride : Int,
+  val padding : Boolean,
+  tPut : Double,
+  debug : Boolean = false
+) extends NNLayer(
+  tPut,
+  grpSize,
+  outFormat._1 * outFormat._2 * outFormat._3,
+  BufferLayer.calcOutSize( stride, tPut )
+) {
 
-  Predef.assert( outFormat._1 == outFormat._2, "Must be square conv for now" )
+  Predef.assert( outFormat._1 == outFormat._2, "Must be square" )
+  Predef.assert( ( outFormat._1 % 2 == 1 && outFormat._2 % 2 == 1 ) || !padding,
+    "Even sized kernels must not have padding" )
 
-  val debug = true
-
-  // calculate the vlds and padding
-  val padSize_1 = ( outFormat._1 - 1 )/ 2
-  val padSize_2 = ( outFormat._2 - 1 )/ 2
+  val padSize_1 = outFormat._1 / 2
+  val padSize_2 = outFormat._2 / 2
 
   val bufferSize = {
     if ( throughput < 1 )
@@ -42,13 +52,8 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
   }
 
   val remainder = ( imgSize - bufferSize * throughput ).toInt
-  println( "remainder = " + remainder )
-
-  // calculate the number of inputs for image loops
   val noImgPos = BufferLayer.lcm( imgSize * imgSize, noIn ) / noIn
-  println( "noImgPos = " + noImgPos )
 
-  // wait until init done until start sending
   val initCount = {
     if ( padding )
       padSize_1 * imgSize + padSize_2
@@ -56,7 +61,6 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
       ( outFormat._1 - 1 ) * imgSize + ( outFormat._2 - 1 )
   }
 
-  // Take the input and make it have a throughput of 1 to make life easier
   val bufferedInput = {
     if ( throughput < 1 ) {
       val mySer = Serializer( dtype, grpSize, (grpSize/throughput).toInt )
@@ -68,19 +72,18 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
       io.dataIn
   }
 
-  // Buffer the input
   val inQueue = Queue( bufferedInput, qSize )
 
   val ready = io.dataOut.ready
-  inQueue.ready := ready
   val nextData = inQueue.valid & ready
+  inQueue.ready := ready
 
   if ( debug )
     printf( "nextData = %d\n", nextData )
 
   /** Count "cnt" vld's and then output true
     */
-  def initFlagCount( vld : Bool, cnt : Int ) : Bool = {
+  def initCounter( vld : Bool, cnt : Int ) : Bool = {
     val vldCnt = Counter( vld, cnt )
     val doneFlag = RegInit( false.B )
     when ( vldCnt._2 ) {
@@ -91,40 +94,40 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
 
   /* This method buffers image rows
    */
-  def getMemBuffers( inputData : Vec[T], nextData : Bool ) : List[(Vec[T], Bool)] = {
+  def getMemBuffers( inputData : Vec[T], nxt : Bool ) : List[(Vec[T], Bool)] = {
 
     val memBuffers = ArrayBuffer[(Vec[T], Bool)]()
-    memBuffers += { ( inputData, nextData ) } // this is the most recent row
+    memBuffers += { ( inputData, nxt ) }
 
-    // create a mem to buffer the data to increase the latency to the correct amount
+    // increase the latency to the correct amount
     while ( memBuffers.size < outFormat._1 ) {
       val mb = memBuffers.last
-      printf( "mb( %d ) = ", mb._2 )
-      for ( d <- mb._1 )
-        printf( "%d, ", d )
-      printf( "\n" )
-      // take the output of mb
-      val lastInput = mb._1.grouped( outFormat._3 ).toList.map( Vec( _ ) )
-      // delay the input by one cycle
-      val lastReg = lastInput.map( x => RegEnable( x, mb._2 ) )
-      // combine together
-      val lastComb = lastInput ++ lastReg
-      // pick the shifted data so it aligns with the imgSize
-      val chosenVec = ( 0 until lastInput.size ).map( i => {
-        lastComb( i + remainder )
+      val latestInput = mb._1.grouped( outFormat._3 ).toList.map( Vec( _ ) )
+      val delayedInput = latestInput.map( x => RegEnable( x, mb._2 ) )
+      val pastTwoInputs = latestInput ++ delayedInput
+
+      val chosenInput = ( 0 until latestInput.size ).map( i => {
+        pastTwoInputs( i + remainder )
       }).reduce( ( a, b ) => Vec( a ++ b ) )
-      printf( "chosenVec( %d ) = ", mb._2 )
-      for ( v <- chosenVec )
-        printf( "%d, ", v )
-      printf( "\n" )
-      // finally feed into the next membuffer
-      val mbData = ShiftRegister( chosenVec, bufferSize, mb._2 ) // MemShiftRegister( chosenVec, bufferSize, mb._2 )
-      val vldSr = nextData & initFlagCount( mb._2, bufferSize )
-      printf( "mbData( %d ) = ", vldSr )
-      for ( d <- mbData )
-        printf( "%d, ", d )
-      printf( "\n" )
-      memBuffers += { ( mbData, vldSr ) }
+
+      // val outputData = MemShiftRegister( chosenVec, bufferSize, mb._2 )
+      val outputData = ShiftRegister( chosenInput, bufferSize, mb._2 )
+      val outputVld = nxt & initCounter( mb._2, bufferSize )
+      if ( debug ) {
+        printf( "latestInput( %d ) = ", mb._2 )
+        for ( d <- mb._1 )
+          printf( "%d, ", d )
+        printf( "\n" )
+        printf( "chosenInput( %d ) = ", mb._2 )
+        for ( d <- chosenInput )
+          printf( "%d, ", d )
+        printf( "\n" )
+        printf( "outputData( %d ) = ", outputVld )
+        for ( d <- outputData )
+          printf( "%d, ", d )
+        printf( "\n" )
+      }
+      memBuffers += { ( outputData, outputVld ) }
     }
 
     memBuffers.toList
@@ -138,18 +141,33 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
     -1
   }
 
-  /** This method buffers an individual row output stream into windowed columns
+  /** This method buffers a stream of inputs into a block
     */
-  def bufferVec( vecIn : Vec[T], vld : Bool, windShift : UInt, stride : Int,
-    noIgnore : Int, displayBefore : Int ) : (Vec[T], Bool) = {
-    // consider stride and throughput ( is vec size )
+  def bufferVec(
+    vecIn : Vec[T],
+    vld : Bool,
+    windShift : UInt,
+    stride : Int,
+    noIgnore : Int,
+    displayBefore : Int
+  ) : (Vec[T], Bool) = {
 
-    val sldWin = Module( new SlidingWindow( dtype.cloneType, outFormat._3, noIn,
-      outFormat._2, stride, noIgnore, displayBefore ) )
-    printf( "sldWin.dataIn( %d ) = ", vld )
-    for ( v <- vecIn )
-      printf( "%d, ", v )
-    printf( "\n" )
+    val sldWin = Module( new SlidingWindow(
+      dtype.cloneType,
+      outFormat._3,
+      noIn,
+      outFormat._2,
+      stride,
+      noIgnore,
+      displayBefore
+    ) )
+
+    if ( debug ) {
+      printf( "sldWin.dataIn( %d ) = ", vld )
+      for ( v <- vecIn )
+        printf( "%d, ", v )
+      printf( "\n" )
+    }
     sldWin.io.dataIn.bits := vecIn
     sldWin.io.windShift := windShift
     sldWin.io.dataIn.valid := vld
@@ -165,23 +183,22 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
   }
 
   // for each row, get the column buffer
-  val joinedVecs = memBuffers.zipWithIndex.map( z => {
-    val noIgnore = (z._2 * remainder + {
+  val windowedData = memBuffers.zipWithIndex.map( z => {
+    val noIgnore = ( z._2 * remainder + {
       val startIdx = memBuffers.size - 1 - padSize - z._2
       if ( startIdx < 0 )
-        ( stride + startIdx ) * imgSize // to the next output if padding
+        ( stride + startIdx ) * imgSize
       else
         startIdx * imgSize
     }) % stride
     val windShift = 0
-    println( "noIgnore = " + noIgnore )
-    println( "windShift = " + windShift )
     bufferVec( z._1._1, z._1._2, windShift.U, stride, noIgnore, padSize )
   })
+
   // put each output together
-  val grpedVecs = joinedVecs.map( _._1 ).map( jv => {
+  val grpedVecs = windowedData.map( _._1 ).map( jv => {
     // group to rows
-    jv.grouped( outFormat._2*outFormat._3).toList.map( grp => {
+    jv.grouped( outFormat._2 * outFormat._3 ).toList.map( grp => {
       grp.grouped( outFormat._3 ).toList // group to pixels
     })
   })
@@ -194,8 +211,8 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
         printf( "%d, ", v )
       printf( "\n" )
     }
-    for ( mb <- joinedVecs.map( _._1 ).zipWithIndex ) {
-      printf( "joinedVecs( " + mb._2 + " ) = " )
+    for ( mb <- windowedData.map( _._1 ).zipWithIndex ) {
+      printf( "windowedData( " + mb._2 + " ) = " )
       for ( v <- mb._1 )
         printf( "%d, ", v )
       printf( "\n" )
@@ -260,7 +277,7 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
           if ( iMod % stride != 0 || jMod % stride != 0 )
             img( i )( j ) = false
         }
-        if ( j < outFormat._2 - 1 && !padding )
+        if ( ( j < outFormat._2 - 1 || i < outFormat._1 - 1 ) && !padding )
           img( i )( j ) = false
         if ( j < padSize_2 && padding ) {
           if ( ( iMod - 1 ) % stride != 0 ||
@@ -269,8 +286,10 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
         }
       }
     }
-    println( "imgVld = " + img )
-    // the vld masks when there is more than one output
+    // if ( debug )
+      println( "imgVld = " + img )
+
+    // when there is more than one output
     val imgMasks = ( 0 until noImgPos ).map( i => {
       val posRng = ( ( i * noIn ) until ( i + 1 ) * noIn ).toList
       val outGrpSize = ( noIn / noOut )
@@ -285,18 +304,19 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
         }).reduce( _ || _ )
       })
     }).toList
-    println( "imgMasks = " + imgMasks )
+    if ( debug )
+      println( "imgMasks = " + imgMasks )
+
     val imgVld = imgMasks.map( z => z.reduce( _ || _ ) )
     val imgMasksVec = Vec( imgMasks.map( x => Vec( x.map( _.B ) )) )
     val imgVldVec = Vec( imgVld.map( _.B ) )
 
-    // vld outputs
-    val vldOut = ShiftRegister( imgVldVec( imgCntr._1 ) & initDone, 1, false.B, nxt )
+    val vldOut = RegEnable( imgVldVec( imgCntr._1 ) & initDone, false.B, nxt )
     val imgMasksOut = Wire( Vec( noOut, false.B.cloneType ) )
     for ( i <- 0 until noOut )
       imgMasksOut( i ) := imgMasksVec( imgCntr._1 )( i ) & initMasksDone( i )
 
-    val vldMsk = ShiftRegister( imgMasksOut, 1, nxt )
+    val vldMsk = RegEnable( imgMasksOut, nxt )
     ( vldOut & nxt, vldMsk )
   }
 
@@ -306,8 +326,9 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
     */
   def getPadding( nxt : Bool ) : ( Vec[SInt], Vec[SInt] ) = {
 
+    // default to no padding
     while( padVals.size < imgSize )
-      padVals += ArrayBuffer.fill( imgSize ) { ( 0, 0 ) } // default to no padding
+      padVals += ArrayBuffer.fill( imgSize ) { ( 0, 0 ) }
 
     for ( x <- 0 until imgSize ) {
       for ( y <- 0 until imgSize ) {
@@ -317,21 +338,23 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
           else
             x
         }
-        // set up top padding
-        if ( xMod < padSize_1 ) // from the previous image
+
+        if ( xMod < padSize_1 )
           padVals( x )( y ) = ( - xMod - 1, padVals( x )( y )._2 )
-        else if ( xMod < outFormat._1 ) // first rows of this image
+        else if ( xMod < outFormat._1 )
           padVals( x )( y ) = ( outFormat._1 - 1 - xMod, padVals( x )( y )._2 )
 
-        if ( y < padSize_2 ) // set up previous row padding
+        if ( y < padSize_2 )
           padVals( x )( y ) = ( padVals( x )( y )._1, - y - 1 )
-        else if ( y < outFormat._2 ) // set up this rows padding
+        else if ( y < outFormat._2 )
           padVals( x )( y ) = ( padVals( x )( y )._1, outFormat._2 - 1 - y )
       }
     }
-    println( "padVals = " )
-    for ( v <- padVals )
-      println( v )
+    if ( debug ) {
+      println( "padVals = " )
+      for ( v <- padVals )
+        println( v )
+    }
     val padMaskIdxs = ( 0 until noImgPos ).map( i => {
       val posRng = ( ( i * noIn ) until ( i + 1 ) * noIn ).toList
       posRng.filter( z => {
@@ -341,7 +364,8 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
         zModX == 0 && zModY == 0
       })
     })
-    println( "padMasksIdxs = " + padMaskIdxs )
+    if ( debug )
+      println( "padMasksIdxs = " + padMaskIdxs )
     val padMask = padMaskIdxs.map( imgPos => {
       val padXY = imgPos.map( z => {
         ( z / imgSize, z % imgSize )
@@ -352,9 +376,10 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
       })
       ( padXY.map( _._1 ), padXY.map( _._2 ) )
     }).toList
-    println( "padMask = " + padMask )
+    if ( debug )
+      println( "padMask = " + padMask )
     val padMaskVecX = Wire( Vec( noImgPos, Vec( noOut, 0.S( log2Ceil( outFormat._1 ).W ).cloneType ) ) )
-    val padMaskVecY = Wire( Vec( noImgPos, Vec( noOut, 0.S( log2Ceil( outFormat._2 ).W ).cloneType ) ) )
+    val padMaskVecY = Wire( padMaskVecX.cloneType )
     for ( i <- 0 until noImgPos ) {
       for ( j <- 0 until noOut ) {
         if ( j < padMask( i )._1.size ){
@@ -368,8 +393,8 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
       }
     }
 
-    val padMaskXOut = ShiftRegister( padMaskVecX( imgCntr._1 ), 1, nxt )
-    val padMaskYOut = ShiftRegister( padMaskVecY( imgCntr._1 ), 1, nxt )
+    val padMaskXOut = RegEnable( padMaskVecX( imgCntr._1 ), nxt )
+    val padMaskYOut = RegEnable( padMaskVecY( imgCntr._1 ), nxt )
 
     ( padMaskXOut, padMaskYOut )
   }
@@ -382,24 +407,25 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
 
   def getPadCond( x : Int, pX : SInt, xSize : Int ) : Bool = {
     val mp = ( xSize - 1 )/2
-    if ( x < mp ) {
-      ( pX > x.S ) // trigger when pX >= 1
-    } else if ( x > mp ) {
-      ( pX < ( x - xSize + 1 ).S )
-    } else
-        false.B
+    if ( x < mp )
+      pX > x.S
+    else if ( x > mp )
+      pX < ( x - xSize + 1 ).S
+    else
+      false.B
   }
 
-  // apply padding to the output vector
   val dataJoined : Vec[T] = {
     if ( padding ) {
-      val padRes = getPadding( nextData )
+      val ( padXList, padYList ) = getPadding( nextData )
 
-      val padXY = padRes._1.zip( padRes._2 )
-      printf( "padXY = " )
-      for ( xy <- padXY )
-        printf( " (%d, %d), ", xy._1, xy._2 )
-      printf( "\n" )
+      val padXY = padXList.zip( padYList )
+      if ( debug ) {
+        printf( "padXY = " )
+        for ( xy <- padXY )
+          printf( " (%d, %d), ", xy._1, xy._2 )
+        printf( "\n" )
+      }
 
       val newDataOut = dataOut.zip( padXY.reverse ).map( convImg => {
         val padX = convImg._2._1
@@ -421,8 +447,13 @@ class BufferLayer( val imgSize : Int, val grpSize : Int, val outFormat : (Int, I
         }).reduce( ( a, b ) => Vec( a ++ b ) )
       }).reverse.reduce( ( a, b ) => Vec( a ++ b ) )
       newDataOut
+
     } else {
-      Vec( dataOut.map( jv => jv.map( p => p.reduce( _ ++ _ ) ).reduce( _ ++ _ ) ).reverse.reduce( _ ++ _ ) )
+      Vec(
+        dataOut.map( outputBlock => {
+          outputBlock.map( imgRow => imgRow.reduce( _ ++ _ ) ).reduce( _ ++ _ )
+        }).reverse.reduce( _ ++ _ )
+      )
     }
   }
 

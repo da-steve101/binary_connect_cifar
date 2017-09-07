@@ -9,7 +9,7 @@ import chisel3.util._
 abstract class NNLayer( val throughput : Double, inSize : Int,
   outSize : Int, val noOut : Int ) extends Module {
 
-  val dtype = Wire(SInt( 8.W ))
+  val dtype = Wire(SInt( 16.W ))
   type T = SInt
 
   if ( throughput >= 1 )

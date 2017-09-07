@@ -9,8 +9,8 @@ import chisel3.util._
 private class MaxPool[T <: Bits with Num[T]]( dtype : T, kernShape : ( Int, Int, Int ) ) extends Module {
 
   val io = IO( new Bundle {
-    val dataIn = Input(Vec( kernShape._1, Vec( kernShape._2, Vec( kernShape._3, dtype ))))
-    val dataOut = Output(Vec( kernShape._3, dtype ))
+    val dataIn = Input(Vec( kernShape._1, Vec( kernShape._2, Vec( kernShape._3, dtype.cloneType ))))
+    val dataOut = Output(Vec( kernShape._3, dtype.cloneType ))
   })
 
   def getMax( numsToCmp : Seq[T] ) : ( T, Int ) = {
@@ -23,7 +23,7 @@ private class MaxPool[T <: Bits with Num[T]]( dtype : T, kernShape : ( Int, Int,
         if ( grp.size == 1 )
           RegNext( grp(0) )
         else {
-          val maxVal = Reg( dtype.cloneType )
+          val maxVal = Reg( dtype.cloneType.cloneType )
           maxVal := grp(0)
           when ( grp(1) >= grp(0) ) {
             maxVal := grp(1)

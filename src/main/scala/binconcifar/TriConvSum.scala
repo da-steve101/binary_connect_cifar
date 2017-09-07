@@ -9,8 +9,8 @@ import scala.collection.mutable.ArrayBuffer
 private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[Seq[Seq[Seq[Int]]]] ) extends Module {
 
   val io = IO( new Bundle {
-    val dataIn = Input(Vec( weights(0).size, Vec( weights(0)(0).size, Vec( weights(0)(0)(0).size, dtype ))))
-    val dataOut = Output(Vec( weights.size, dtype ))
+    val dataIn = Input(Vec( weights(0).size, Vec( weights(0)(0).size, Vec( weights(0)(0)(0).size, dtype.cloneType ))))
+    val dataOut = Output(Vec( weights.size, dtype.cloneType ))
   })
 
   def mapToWires( conv : Seq[Seq[Seq[Int]]], currData : Seq[Seq[Seq[T]]] ) : (Seq[T], Seq[T]) = {
