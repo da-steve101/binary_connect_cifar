@@ -1,14 +1,21 @@
 
 import tensorflow as tf
+import pickle
+import numpy as np
+import os
 
-def trinarize( x, nu = 0.7 ):
+def trinarize( x, block_mask, nu = 0.7 ):
     clip_val = tf.clip_by_value( x, -1, 1 )
     x_shape = x.get_shape()
     thres = nu * tf.reduce_mean(tf.abs(x))
-    unmasked = tf.where( tf.logical_and( tf.greater( clip_val, -thres ),
-                                         tf.less( clip_val, thres ) ),
-                         tf.constant( 0.0, shape = x_shape ),
-                         clip_val )
+    clip_val = tf.multiply( clip_val, block_mask )
+    unmasked = tf.where(
+        tf.logical_and(
+            tf.greater( clip_val, -thres ),
+            tf.less( clip_val, thres )
+        ),
+        tf.constant( 0.0, shape = x_shape ),
+        clip_val )
     eta = tf.reduce_mean( tf.abs( unmasked ) )
     t_x = tf.where( tf.less_equal( unmasked, -thres ),
                     tf.multiply( tf.constant( -1.0, shape = x_shape ), eta ),
@@ -19,7 +26,32 @@ def trinarize( x, nu = 0.7 ):
     return t_x
 
 def trin_stop_grad( x ):
-    return x + tf.stop_gradient( trinarize( x ) - x )
+    fname = "block_mask_dicts.pkl"
+    block_mask = tf.constant( 1, shape = x.shape, dtype = tf.float32 )
+    if os.path.exists( fname ):
+        f = open( fname, "rb" )
+        block_dict = pickle.load( f )
+        f.close()
+        if x.name in block_dict:
+            print( x.name + " was found in block_dict" )
+            block_mask = tf.constant( block_dict[x.name], dtype = tf.float32 )
+    return x + tf.stop_gradient( trinarize( x, block_mask ) - x )
+
+def create_block_dict( model_name = "train_out/model.ckpt-0" ):
+    config = tf.ConfigProto(allow_soft_placement=True)
+    sess = tf.Session( config = config )
+    new_saver = tf.train.import_meta_graph( model_name + ".meta")
+    new_saver.restore( sess, model_name )
+    all_tri = tf.get_collection( tf.GraphKeys.WEIGHTS )
+    var_dict = {}
+    for x in all_tri:
+        if "weights:0" in x.name:
+            tmp = sess.run( x )
+            thres = 1.1 * np.mean( abs( tmp ) )
+            var_dict[x.name] = ( abs(tmp) > thres ) * 1
+    f = open( "block_mask_dicts.pkl", "wb" )
+    pickle.dump( var_dict, f )
+    f.close()
 
 def get_conv( x, filter_out, kernel_size, strides ):
     conv_shape = [ kernel_size, kernel_size, x.get_shape()[-1], filter_out ]
@@ -28,6 +60,7 @@ def get_conv( x, filter_out, kernel_size, strides ):
         shape = conv_shape,
         initializer=tf.contrib.layers.xavier_initializer()
     )
+    tf.add_to_collection( tf.GraphKeys.WEIGHTS, conv_weights )
     weight_decay = tf.multiply(tf.nn.l2_loss(conv_weights), 0.0001, name='weight_loss')
     tf.add_to_collection('losses', weight_decay)
     conv_tri_weights = trin_stop_grad( conv_weights )
@@ -50,6 +83,7 @@ def get_dense( x, outputs ):
         shape = w_shape,
         initializer=tf.contrib.layers.xavier_initializer()
     )
+    tf.add_to_collection( tf.GraphKeys.WEIGHTS, dense_weights )
     weight_decay = tf.multiply(tf.nn.l2_loss(dense_weights), 0.0001, name='weight_loss')
     tf.add_to_collection('losses', weight_decay)
     dense_tri_weights = trin_stop_grad( dense_weights )

@@ -18,7 +18,7 @@ def get_variables( model_name ):
     all_tri = tf.get_collection( tf.GraphKeys.WEIGHTS )
     var_dict = {}
     for x in all_tri:
-        if "tower_0" in x.name:
+        if "tower_0" in x.name and "add:0" in x.name:
             lyr_name = x.name.split("/")[1]
             var_dict[lyr_name] = sess.run( x )
     all_bias = tf.get_collection( tf.GraphKeys.BIASES )
@@ -40,10 +40,39 @@ def get_variables( model_name ):
             var_dict[bn_name] = sess.run( x )
     return var_dict
 
+def round_to( x, bits_prec = 5 ):
+    factor = 1 << bits_prec
+    return np.round( x * factor )/factor
+
+def floor_to( x, bits_prec = 5 ):
+    factor = 1 << bits_prec
+    return np.floor( x * factor )/factor
+
+def get_ternary( x ):
+    x_flat = x.flatten()
+    scaling_factor = np.mean(abs(x_flat[abs(x_flat) > 0]))
+    tri_weights = np.round(x/scaling_factor).astype( int )
+    return tri_weights, scaling_factor
+
+def write_to_file( inputs, fname, no_dims = 4, additional_info = None ):
+  f_out = open( fname, "w" )
+  wrt = csv.writer( f_out )
+  if additional_info is not None:
+    wrt.writerow( additional_info )
+  for a in inputs:
+    if no_dims == 3:
+        for b in a:
+            if no_dims == 4:
+                for c in b:
+                    tmp = wrt.writerow( c )
+            else:
+                tmp = wrt.writerow( b )
+    else:
+        tmp = wrt.writerow( a )
+  f_out.close()
+
 def compute_conv( img, conv_weights ):
-    conv_flat = conv_weights.flatten()
-    scaling_factor = np.mean(abs(conv_flat[abs(conv_flat) > 0]))
-    tri_weights = np.round(conv_weights/scaling_factor).astype( int )
+    tri_weights, scaling_factor = get_ternary( conv_weights )
     filter_out = []
     for fno in range( conv_weights.shape[-1] ):
         ch_sum = 0
@@ -54,39 +83,68 @@ def compute_conv( img, conv_weights ):
     filter_out = np.array( filter_out )
     return ( np.transpose( filter_out, [ 1, 2, 0 ] ), scaling_factor )
 
-def compute_BN( img, mean, var, gamma, beta ):
-    a = gamma / var
+def print_info( msg, x ):
+    print( msg, np.max( x ), np.min( x ), np.mean( x ), np.median( x ) )
+    # pass
+
+def get_AB( lyr, var_dict, scaling_factor, bias, bn_prec ):
+    mean = var_dict[lyr + '/mean'] - bias
+    stddev = np.sqrt( var_dict[lyr + '/variance'] )
+    gamma = var_dict[lyr +'/gamma']
+    beta = var_dict[lyr + '/beta']
+    a = gamma / stddev
+    a = a * ( a < 10**15 ) # if very big then prob is ignored anyway
     b = beta - a * mean
-    return a * img + b
+    a = a * scaling_factor
+    a = round_to( a, bn_prec )
+    b = round_to( b, bn_prec )
+    return [ a, b ]
 
 def compute_relu( img ):
-    return img * ( img > 0 )
+    return img * ( img >= 0 )
 
 def compute_max_pool( img ):
     return block_reduce( img, (2, 2, 1), np.max )
 
-def compute_conv_lyr( img, var_dict, idx ):
+def linear_shift( img, a, b, prec ):
+    return floor_to( a * img + b, prec )
+
+def compute_conv_lyr( img, var_dict, idx, conv_prec = 5 ):
     lyr = "conv" + str(idx)
     conv_weights = var_dict[lyr]
+    img = round_to( img, conv_prec )
     conv_res, scaling_factor = compute_conv( img, conv_weights )
-    bn_res = compute_BN(
-        conv_res,
-        var_dict[lyr + '/mean'] / scaling_factor,
-        np.sqrt( var_dict[lyr + '/variance'] ),
-        var_dict[lyr +'/gamma'] * scaling_factor,
-        var_dict[lyr + '/beta'])
+    print_info( "conv" + str(idx), conv_res )
+    a, b = get_AB(
+        lyr,
+        var_dict,
+        scaling_factor,
+        0,
+        5
+    )
+    bn_res = linear_shift( conv_res, a, b, conv_prec )
+    #print_info( "conv_bn" + str(idx), bn_res )
     relu_res = compute_relu( bn_res )
-    return relu_res
+    #print_info( "conv_relu" + str(idx), relu_res )
+    relu_res = floor_to( relu_res, conv_prec )
+    return relu_res, a, b
 
-def compute_dense_lyr( img, var_dict, lyr_name ):
+def compute_dense_lyr( img, var_dict, lyr_name, dense_prec = 3 ):
+    img = round_to( img, dense_prec )
     img_flat = img.flatten()
-    mat = var_dict[lyr_name]
+    mat, scaling_factor = get_ternary( var_dict[lyr_name] )
     bias = 0
     bias_name = lyr_name + "/bias"
     if bias_name in var_dict:
-        bias = var_dict[bias_name]
-    matmul_res = img_flat.dot( mat ) + bias
-    return matmul_res
+        bias = round_to( var_dict[bias_name], dense_prec )
+    if lyr_name + '/mean'in var_dict: # apply batch norm
+        a, b = get_AB( lyr_name, var_dict, scaling_factor, bias, 5 )
+    else:
+        a = round_to( scaling_factor, 5 )
+        b = bias
+    b = round_to( b, dense_prec )
+    matmul_res = round_to( img_flat.dot( mat ), dense_prec )
+    return linear_shift( matmul_res, a, b, dense_prec ), a, b
 
 def get_image( fname ):
     img_handle = Image.open( fname )
@@ -98,24 +156,18 @@ def get_image( fname ):
 
 def inference( img, var_dict ):
     for i in range( 2 ):
-        img = compute_conv_lyr( img, var_dict, i + 1 )
+        img, a, b = compute_conv_lyr( img, var_dict, i + 1, 3 )
     img = compute_max_pool( img )
     for i in range( 2 ):
-        img = compute_conv_lyr( img, var_dict, i + 3 )
+        img, a, b = compute_conv_lyr( img, var_dict, i + 3, 3 )
     img = compute_max_pool( img )
     for i in range( 2 ):
-        img = compute_conv_lyr( img, var_dict, i + 5 )
+        img, a, b = compute_conv_lyr( img, var_dict, i + 5, 3 )
     img = compute_max_pool( img )
-    lyr = "fc_1024"
-    img = compute_dense_lyr( img, var_dict, lyr )
-    img = compute_BN(
-        img,
-        var_dict[lyr + "/mean"],
-        var_dict[lyr + "/variance"],
-        var_dict[lyr + "/gamma"],
-        var_dict[lyr + "/beta"] )
+    img, a, b = compute_dense_lyr( img, var_dict, "fc_1024", 3 )
     img = compute_relu( img )
-    return compute_dense_lyr( img, var_dict, "softmax" )
+    pred, a, b = compute_dense_lyr( img, var_dict, "softmax", 3 )
+    return pred
 
 def max_pred( pred, labels ):
     return labels[ np.argmax( pred ) ]
