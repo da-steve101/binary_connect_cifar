@@ -7,15 +7,18 @@ import chisel3.util._
 import scala.util.Random
 import binconcifar.TriConvSum
 import binconcifar.BufferLayer
+import binconcifar.ScaleAndShift
 import scala.collection.mutable.ArrayBuffer
 
 class ConvLayer1 extends Module {
 
-  val tPut = 1
+  val tPut = 2
   val imgSize = 32
   val outFormat = ( 3, 3, 3 )
   val dtype = SInt( 16.W )
-  val noOut = 64
+  val fracBits = 3
+  val abFracBits = 5
+  val noOut = 4
   val io = IO(new Bundle {
     val dataIn = Flipped(Decoupled( Vec( tPut * 3, dtype.cloneType ) ))
     val dataOut = Decoupled( Vec( tPut * noOut, dtype.cloneType ) )
@@ -31,32 +34,41 @@ class ConvLayer1 extends Module {
     weights.map( w0 => w0.map( w1 => w1.map( w2 => w2(i) ) ) )
   ).map( x => x.map( _.reverse ).reverse )
 
-  val blMod = Module( new BufferLayer( imgSize, outFormat._3, outFormat, 10, 1, true, tPut ) )
+  val bufferedSource_ab = scala.io.Source.fromFile("src/main/resources/conv1_ab.csv")
+  val ab_raw = bufferedSource_ab.getLines.toList
+  val ab = ab_raw.map( _.split(",").toList.map( x => ( x.toFloat * ( 1 << abFracBits ) ).toInt ) )
+
+  val blMod = Module( new BufferLayer( imgSize, outFormat._3, outFormat, 10, 1, true, tPut, true ) )
+  // val vldMaskBuff = Module( new VldMaskBuffer( dtype, outFormat._1 * outFormat._2 * outFormat._3, tPut.toInt ) )
   val conv1 = Module( new TriConvSum( weights_trans, tPut ) )
+  val scaleShift = Module( new ScaleAndShift( fracBits, abFracBits, ab(0).take( noOut ), ab(1).take( noOut ), tPut ) )
 
   val latency = 32
   val noIn = tPut
 
   blMod.io.dataIn <> io.dataIn
   conv1.io.dataIn <> blMod.io.dataOut
-  io.dataOut <> conv1.io.dataOut
+  scaleShift.io.dataIn <> conv1.io.dataOut
+  io.dataOut <> scaleShift.io.dataOut
+  // io.dataOut <> conv1.io.dataOut
 }
 
 class ConvLayer1Tests( c : ConvLayer1 ) extends PeekPokeTester( c ) {
   val myRand = new Random
-  val cycs = c.latency*5
+  val cycs = 32*5
 
   val bufferedSource = scala.io.Source.fromFile("src/main/resources/airplane4.csv")
   val img_raw = bufferedSource.getLines.toList
   val img = img_raw.map( _.split(",").toList.map( x => {
-    BigInt(( x.toFloat * ( 1 << 2 ) ).toInt)
-  }) ).grouped( 32 ).toList
+    BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
+  }) ).grouped( c.imgSize ).toList
 
-  val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane_conv1_act.csv")
+  val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_conv1_relu.csv")
+  // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane_conv1_act.csv")
   val conv_res_raw = bufferedSource_2.getLines.toList
   val convRes = conv_res_raw.map( _.split(",").toList.map( x => {
-    BigInt(( x.toFloat * ( 1 << 2 ) ).toInt)
-  }).take( c.noOut ) ).grouped( 32 ).toList
+    BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
+  }).take( c.noOut ) ).grouped( c.imgSize ).toList
 
   var imgRow = 0
   var imgCol = 0
@@ -79,11 +91,13 @@ class ConvLayer1Tests( c : ConvLayer1 ) extends PeekPokeTester( c ) {
     step( 1 )
     val vldOut = peek( c.io.dataOut.valid ) == 1
     if ( vldOut ) {
-      val convX = ( convCount / 32 ) % 32
-      val convY = convCount % 32
-      for ( i <- 0 until convRes( convX )( convY ).size )
-        expect( c.io.dataOut.bits(i), convRes( convX )( convY )(i) )
-      convCount += 1
+      for ( j <- 0 until c.tPut.toInt ) {
+        val convX = ( convCount / c.imgSize ) % c.imgSize
+        val convY = convCount % c.imgSize
+        for ( i <- 0 until c.noOut )
+          expect( c.io.dataOut.bits( j * c.noOut + i ), convRes( convX )( convY )(i) )
+        convCount += 1
+      }
     }
   }
 }
@@ -93,7 +107,7 @@ class ConvLayer1Suite extends ChiselFlatSpec {
   behavior of "ConvLayer1Suite"
   backends foreach {backend =>
     it should s"correctly compute the convolution $backend" in {
-      Driver(() => { new ConvLayer1  }, "verilator", false )( c =>
+      Driver(() => { new ConvLayer1  }, "verilator", true )( c =>
         new ConvLayer1Tests( c ) ) should be (true)
     }
   }

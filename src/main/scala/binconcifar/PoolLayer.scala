@@ -54,7 +54,7 @@ class PoolLayer( tput : Double, val kernShape : (Int, Int, Int) )
     extends NNLayer( tput, kernShape._1 * kernShape._2 * kernShape._3,
       kernShape._3, tput.toInt ) {
 
-  io.dataIn.ready := true.B
+  io.dataIn.ready := io.dataOut.ready
 
   var tmpLat = -1
 

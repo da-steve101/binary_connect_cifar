@@ -51,6 +51,13 @@ class BufferLayer(
       ( imgSize / throughput ).toInt
   }
 
+  val padSize = {
+    if ( padding )
+      padSize_2
+    else
+      0
+  }
+
   val remainder = ( imgSize - bufferSize * throughput ).toInt
   val noImgPos = BufferLayer.lcm( imgSize * imgSize, noIn ) / noIn
 
@@ -110,7 +117,7 @@ class BufferLayer(
         pastTwoInputs( i + remainder )
       }).reduce( ( a, b ) => Vec( a ++ b ) )
 
-      // val outputData = MemShiftRegister( chosenVec, bufferSize, mb._2 )
+      // val outputData = MemShiftRegister( chosenInput, bufferSize, mb._2 )
       val outputData = ShiftRegister( chosenInput, bufferSize, mb._2 )
       val outputVld = nxt & initCounter( mb._2, bufferSize )
       if ( debug ) {
@@ -161,6 +168,7 @@ class BufferLayer(
       noIgnore,
       displayBefore
     ) )
+    sldWin.io.windShift := windShift
 
     if ( debug ) {
       printf( "sldWin.dataIn( %d ) = ", vld )
@@ -169,18 +177,12 @@ class BufferLayer(
       printf( "\n" )
     }
     sldWin.io.dataIn.bits := vecIn
-    sldWin.io.windShift := windShift
     sldWin.io.dataIn.valid := vld
 
     ( sldWin.io.dataOut.bits, sldWin.io.dataOut.valid )
   }
 
-  val padSize = {
-    if ( padding )
-      padSize_2
-    else
-      0
-  }
+  val windShift = 0
 
   // for each row, get the column buffer
   val windowedData = memBuffers.zipWithIndex.map( z => {
@@ -191,7 +193,6 @@ class BufferLayer(
       else
         startIdx * imgSize
     }) % stride
-    val windShift = 0
     bufferVec( z._1._1, z._1._2, windShift.U, stride, noIgnore, padSize )
   })
 
@@ -447,7 +448,6 @@ class BufferLayer(
         }).reduce( ( a, b ) => Vec( a ++ b ) )
       }).reverse.reduce( ( a, b ) => Vec( a ++ b ) )
       newDataOut
-
     } else {
       Vec(
         dataOut.map( outputBlock => {
