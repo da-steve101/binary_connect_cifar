@@ -6,19 +6,19 @@ import chisel3.iotesters.{PeekPokeTester, Driver, ChiselFlatSpec}
 import chisel3.util._
 import scala.util.Random
 import binconcifar.TriConvSum
-import binconcifar.BufferLayer
+import binconcifar.SimpleBufferLayer
 import binconcifar.ScaleAndShift
 import scala.collection.mutable.ArrayBuffer
 
 class ConvLayer1 extends Module {
 
-  val tPut = 2
+  val tPut = 1
   val imgSize = 32
   val outFormat = ( 3, 3, 3 )
   val dtype = SInt( 16.W )
   val fracBits = 3
   val abFracBits = 5
-  val noOut = 4
+  val noOut = 64
   val io = IO(new Bundle {
     val dataIn = Flipped(Decoupled( Vec( tPut * 3, dtype.cloneType ) ))
     val dataOut = Decoupled( Vec( tPut * noOut, dtype.cloneType ) )
@@ -38,7 +38,7 @@ class ConvLayer1 extends Module {
   val ab_raw = bufferedSource_ab.getLines.toList
   val ab = ab_raw.map( _.split(",").toList.map( x => ( x.toFloat * ( 1 << abFracBits ) ).toInt ) )
 
-  val blMod = Module( new BufferLayer( imgSize, outFormat._3, outFormat, 10, 1, true, tPut, true ) )
+  val blMod = Module( new SimpleBufferLayer( imgSize, outFormat._3, outFormat, 10, 1, true, tPut, true ) )
   // val vldMaskBuff = Module( new VldMaskBuffer( dtype, outFormat._1 * outFormat._2 * outFormat._3, tPut.toInt ) )
   val conv1 = Module( new TriConvSum( weights_trans, tPut ) )
   val scaleShift = Module( new ScaleAndShift( fracBits, abFracBits, ab(0).take( noOut ), ab(1).take( noOut ), tPut ) )

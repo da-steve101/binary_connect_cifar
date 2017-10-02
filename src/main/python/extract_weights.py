@@ -60,7 +60,7 @@ def write_to_file( inputs, fname, no_dims = 4, additional_info = None ):
   if additional_info is not None:
     wrt.writerow( additional_info )
   for a in inputs:
-    if no_dims == 3:
+    if no_dims >= 3:
         for b in a:
             if no_dims == 4:
                 for c in b:
@@ -201,3 +201,16 @@ if __name__ == "__main__":
         pred = inference( img, var_dict )
         print( img_name + " is " + max_pred( pred, labels ) )
     output_file.close()
+
+    '''
+    for i in range( 6 ):
+        conv_str = "conv" + str( i + 1 )
+        conv, conv_scaling = get_ternary( var_dict[conv_str] )
+        write_to_file( conv.tolist(), "../resources/" + conv_str + "_weights.csv" )
+        ab = get_AB_lyr( conv_str, conv_scaling, 5 )
+        f_out = open( "../resources/" + conv_str + "_bn.csv", "w" )
+        wrt = csv.writer( f_out )
+        for x in ab:
+            wrt.writerow( x )
+        f_out.close()
+    '''

@@ -152,9 +152,9 @@ class SimpleBufferLayer(
     // need to supress vld on odd strides
     val colCntrReg = {
       if ( tPut == 1 )
-        RegEnable( !colCntr._1(0), nextData )
+        RegEnable( !colCntr._1(0), false.B, nextData )
       else
-        RegEnable( !colCntr._1(0), vld )
+        RegEnable( !colCntr._1(0), false.B, vld )
     }
     io.dataOut.valid := vld & colCntrReg
   }

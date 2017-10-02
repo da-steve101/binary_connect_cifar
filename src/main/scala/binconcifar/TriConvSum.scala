@@ -94,7 +94,7 @@ class TriConvSum( val weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) extends
     NNLayer( tput, weights(0)(0)(0).size * weights(0)(0).size * weights(0).size,
       weights.size, tput.toInt )  {
 
-  io.dataIn.ready := true.B
+  io.dataIn.ready := io.dataOut.ready
 
   var tmpLat = -1
 

@@ -77,5 +77,5 @@ class PoolLayer( tput : Double, val kernShape : (Int, Int, Int) )
 
   val latency = tmpLat
 
-  io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency )
+  io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency, false.B, true.B )
 }
