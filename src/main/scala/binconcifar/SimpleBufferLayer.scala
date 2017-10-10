@@ -62,7 +62,8 @@ class SimpleBufferLayer(
       val mb = memBuffers.last
       // TODO: replace with mem
       val output = Wire( inputVec.cloneType )
-      output.bits := ShiftRegister( mb.bits, bufferSize, inputVec.valid )
+      // output.bits := ShiftRegister( mb.bits, bufferSize, inputVec.valid )
+      output.bits := MemShiftRegister( mb.bits, bufferSize, inputVec.valid )
       output.valid := inputVec.valid & initCounter( mb.valid, bufferSize )
       memBuffers += { output }
     }
