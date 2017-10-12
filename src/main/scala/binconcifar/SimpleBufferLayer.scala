@@ -60,9 +60,7 @@ class SimpleBufferLayer(
 
     while ( memBuffers.size < outFormat._1 ) {
       val mb = memBuffers.last
-      // TODO: replace with mem
       val output = Wire( inputVec.cloneType )
-      // output.bits := ShiftRegister( mb.bits, bufferSize, inputVec.valid )
       output.bits := MemShiftRegister( mb.bits, bufferSize, inputVec.valid )
       output.valid := inputVec.valid & initCounter( mb.valid, bufferSize )
       memBuffers += { output }
@@ -107,7 +105,14 @@ class SimpleBufferLayer(
 
   val vldCycPerRow = ( imgSize / math.max( tPut, stride ) ).toInt
 
-  val rowCntr = Counter( vld, vldCycPerRow )
+  val vldSet = RegInit( false.B )
+  when ( vld ) {
+    vldSet := true.B
+  }
+  when ( ready ) {
+    vldSet := false.B
+  }
+  val rowCntr = Counter( (vld || vldSet) && ready, vldCycPerRow )
   val colCntr = Counter( rowCntr._2, imgSize / stride )
   val lastCol = imgSize - 1
   val lastRow = vldCycPerRow - 1

@@ -91,32 +91,63 @@ private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : S
  * perform the convolution on them
  */
 class TriConvSum( val weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) extends
-    NNLayer( tput, weights(0)(0)(0).size * weights(0)(0).size * weights(0).size,
-      weights.size, tput.toInt )  {
+    NNLayer( math.ceil( tput ), weights(0)(0)(0).size * weights(0)(0).size * weights(0).size,
+      weights.size, math.ceil( tput ).toInt )  {
 
   io.dataIn.ready := io.dataOut.ready
 
-  var tmpLat = -1
+  val tPutRounded = math.ceil( throughput ).toInt
 
-  if ( throughput >= 1 ) {
-    val dataVec = inIOToVVV( weights(0)(0).size, weights(0)(0)(0).size )
-    val convRes = ( 0 until throughput.toInt ).map( idx => {
-      val pConv = Module( new ParrallelTriConvSum( dtype, weights ) )
-      pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
-        dataVec( wIdx + weights(0).size * idx )
-      }))
-      ( pConv.io.dataOut, pConv.latency )
-    })
+  val dataVec = inIOToVVV( weights(0)(0).size, weights(0)(0)(0).size )
+  val convRes = ( 0 until tPutRounded ).map( idx => {
+    val pConv = Module( new ParrallelTriConvSum( dtype, weights ) )
+    pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
+      dataVec( wIdx + weights(0).size * idx )
+    }))
+    ( pConv.io.dataOut, pConv.latency )
+  })
 
-    tmpLat = convRes.map( _._2 ).max
+  val convLat = convRes.map( _._2 ).max
 
-    io.dataOut.bits := convRes.map( o => {
-      ShiftRegister( o._1, tmpLat - o._2 )
-    }).reduce( (a, b) => Vec( a ++ b ) )
+  val convOut = convRes.map( o => {
+    ShiftRegister( o._1, convLat - o._2 )
+  }).reduce( (a, b) => Vec( a ++ b ) )
+
+  val convValid = ShiftRegister( io.dataIn.valid, convLat, false.B, true.B )
+
+  var muxLat = 0
+  val noToMux = ( 1 / tput ).toInt
+  if ( tput < 1 ) {
+    assert( noToMux * tput == 1, "Must be integer" )
+    assert( noToMux == 1 << log2Ceil( noToMux.toInt ), "Must be power of 2 to mux" )
+    val cntrCmp = Wire( false.B.cloneType )
+    val cntr = Counter( io.dataIn.valid | cntrCmp, noToMux )
+    cntrCmp := cntr._1 > 0.U
+    io.dataIn.ready := !io.dataIn.valid & !cntrCmp
+    when ( cntr._1 === ( noToMux - 1 ).U ) {
+      io.dataIn.ready := io.dataOut.ready
+    }
+    val grpSize = convOut.size / noToMux
+    val convGrp = convOut.grouped( grpSize ).toSeq.map( Vec( _ ) )
+    val mapping = convGrp.zipWithIndex.map( x => { ( x._2.U, x._1 ) } )
+    val cntrDelay = ShiftRegister( cntr._1, convLat )
+    val convMux = MuxLookup( cntrDelay, convGrp.head, mapping )
+    val convReg = Reg( convOut.cloneType )
+    for ( i <- 0 until noToMux ) {
+      when ( cntrDelay === i.U ) {
+        for ( j <- 0 until grpSize )
+          convReg( i * grpSize + j ) := convMux( j )
+      }
+    }
+    muxLat = noToMux
+
+    io.dataOut.bits := convReg
+    val vldOut = ShiftRegister( convValid, muxLat, false.B, true.B )
+    io.dataOut.valid := vldOut
+  } else {
+    io.dataOut.bits := convOut
+    io.dataOut.valid := convValid
   }
-
   // find the max latency
-  val latency = tmpLat
-
-  io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency )
+  val latency = convLat + muxLat
 }

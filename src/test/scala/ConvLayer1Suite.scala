@@ -10,9 +10,9 @@ import binconcifar.SimpleBufferLayer
 import binconcifar.ScaleAndShift
 import scala.collection.mutable.ArrayBuffer
 
-class ConvLayer1 extends Module {
+class ConvLayer1( val throughput : Double ) extends Module {
 
-  val tPut = 1
+  val tPut = math.ceil( throughput ).toInt
   val imgSize = 32
   val outFormat = ( 3, 3, 3 )
   val dtype = SInt( 16.W )
@@ -40,7 +40,7 @@ class ConvLayer1 extends Module {
 
   val blMod = Module( new SimpleBufferLayer( imgSize, outFormat._3, outFormat, 10, 1, true, tPut, true ) )
   // val vldMaskBuff = Module( new VldMaskBuffer( dtype, outFormat._1 * outFormat._2 * outFormat._3, tPut.toInt ) )
-  val conv1 = Module( new TriConvSum( weights_trans, tPut ) )
+  val conv1 = Module( new TriConvSum( weights_trans, throughput ) )
   val scaleShift = Module( new ScaleAndShift( fracBits, abFracBits, ab(0).take( noOut ), ab(1).take( noOut ), tPut ) )
 
   val latency = 32
@@ -55,7 +55,7 @@ class ConvLayer1 extends Module {
 
 class ConvLayer1Tests( c : ConvLayer1 ) extends PeekPokeTester( c ) {
   val myRand = new Random
-  val cycs = 32*5
+  val cycs = 800
 
   val bufferedSource = scala.io.Source.fromFile("src/main/resources/airplane4.csv")
   val img_raw = bufferedSource.getLines.toList
@@ -74,13 +74,13 @@ class ConvLayer1Tests( c : ConvLayer1 ) extends PeekPokeTester( c ) {
   var imgCol = 0
   var convCount = 0
   for ( cyc <- 0 until cycs ) {
-    val vld = myRand.nextInt(4) != 0
+    val vld = myRand.nextInt(10) != 0
     poke( c.io.dataOut.ready, true )
     poke( c.io.dataIn.valid, vld )
     for ( i <- 0 until c.noIn ) {
       for ( j <- 0 until c.outFormat._3 )
         poke( c.io.dataIn.bits( ( c.noIn - 1 - i ) * c.outFormat._3 + j ), img( imgRow )( imgCol )(j) )
-      if ( vld ) {
+      if ( vld && peek( c.io.dataIn.ready ) == 1 ) {
         imgCol += 1
         if ( imgCol == c.imgSize ) {
           imgCol = 0
@@ -107,7 +107,7 @@ class ConvLayer1Suite extends ChiselFlatSpec {
   behavior of "ConvLayer1Suite"
   backends foreach {backend =>
     it should s"correctly compute the convolution $backend" in {
-      Driver(() => { new ConvLayer1  }, "verilator", true )( c =>
+      Driver(() => { new ConvLayer1( 0.25 )  }, "verilator", true )( c =>
         new ConvLayer1Tests( c ) ) should be (true)
     }
   }
