@@ -19,8 +19,14 @@ class ScaleAndShift (
   val zero = 0.U.asTypeOf( dtype )
   val mult_res = to_mult.map( x => x.zipWithIndex.map( z => {
     val scale = Wire( dtype.cloneType )
-    scale := RegNext( a( z._2 ).S * z._1 )
-    val shift = RegNext( scale + ( b( z._2 ) << conv_prec ).S )
+    val aTmp = Reg( a( z._2 ).S.cloneType )
+    aTmp := a( z._2 ).S
+    val zTmp = Reg( z._1.cloneType )
+    zTmp := z._1
+    val bTmp = Reg( ( b( z._2 ) << conv_prec ).S.cloneType )
+    bTmp := ( b( z._2 ) << conv_prec ).S
+    scale := RegNext( aTmp * zTmp )
+    val shift = RegNext( scale + bTmp )
     val output = shift >> ab_prec.U
     val relu = Wire( dtype.cloneType )
     relu := zero
@@ -30,7 +36,7 @@ class ScaleAndShift (
     RegNext( relu )
   }))
 
-  val latency = 3
+  val latency = 4
 
   val output = Vec( mult_res.reduce( _ ++ _ ) )
   io.dataOut.bits := output
