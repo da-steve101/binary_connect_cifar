@@ -104,6 +104,7 @@ private class SerialTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[
   val inWidth = dtype.cloneType.getWidth
   val nIter = inWidth / bitWidth
   val log2BW = log2Ceil( bitWidth )
+  val log2Iter = log2Ceil( nIter )
 
   def computeSum( posNums : Seq[UInt], negNums : Seq[UInt] ) : (UInt, Bool, Int) = {
     var plusList = posNums.toList.map( x => { ( x, io.start ) } )
@@ -141,7 +142,7 @@ private class SerialTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[
     return ( plusList.head._1, plusList.head._2, stages )
   }
 
-  val nibbleCntr = RegInit( 0.U( log2BW.W ) )
+  val nibbleCntr = RegInit( 0.U( log2Iter.W ) )
   when ( nibbleCntr > 0.U || io.start ) {
     nibbleCntr := nibbleCntr + 1.U
   }
@@ -171,7 +172,7 @@ private class SerialTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[
   val nibbleStarts = outSums.map( r => ShiftRegister( r._2, nibbleLat - r._3 ))
 
   val unnibble = nibbleOut.zip( nibbleStarts ).map( x => {
-    val nibCntr = RegInit( 0.U( log2BW.W ) )
+    val nibCntr = RegInit( 0.U( log2Iter.W ) )
     when ( x._2 || nibCntr > 0.U ) {
       nibCntr := nibCntr + 1.U
     }
@@ -201,14 +202,14 @@ class TriConvSum( val weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) extends
 
   val inWidth = dtype.cloneType.getWidth
   val bitWidth = math.ceil( inWidth * tput ).toInt
-  val log2BW = log2Ceil( inWidth / bitWidth )
-  val rdyCnt = RegInit( 0.U( log2BW.W ) )
+  val log2Iter = math.max( log2Ceil( math.ceil( inWidth.toFloat / bitWidth ).toInt ), 1 ).toInt
+  val rdyCnt = RegInit( 0.U( log2Iter.W ) )
   if ( bitWidth < inWidth ) {
     // set ready signals
     when ( io.dataIn.valid || rdyCnt > 0.U ) {
       rdyCnt := rdyCnt + 1.U
     }
-    io.dataIn.ready := ( rdyCnt === (bitWidth - 1).U || ( !io.dataIn.valid && rdyCnt === 0.U ) ) && io.dataOut.ready
+    io.dataIn.ready := ( rdyCnt === (( 1 << log2Iter) - 1).U || ( !io.dataIn.valid && rdyCnt === 0.U ) ) && io.dataOut.ready
   }
 
   val dataVec = inIOToVVV( weights(0)(0).size, weights(0)(0)(0).size )
