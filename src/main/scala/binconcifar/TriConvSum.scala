@@ -6,14 +6,12 @@ import chisel3._
 import chisel3.util._
 import scala.collection.mutable.ArrayBuffer
 
-private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[Seq[Seq[Seq[Int]]]] ) extends Module {
+object TriConvSum {
 
-  val io = IO( new Bundle {
-    val dataIn = Input(Vec( weights(0).size, Vec( weights(0)(0).size, Vec( weights(0)(0)(0).size, dtype.cloneType ))))
-    val dataOut = Output(Vec( weights.size, dtype.cloneType ))
-  })
-
-  def mapToWires( conv : Seq[Seq[Seq[Int]]], currData : Seq[Seq[Seq[T]]] ) : (Seq[T], Seq[T]) = {
+  def mapToWires[T <: Bits with Num[T]](
+    conv : Seq[Seq[Seq[Int]]],
+    currData : Seq[Seq[Seq[T]]]
+  ) : (Seq[T], Seq[T]) = {
     val posNums = ArrayBuffer[T]()
     val negNums = ArrayBuffer[T]()
 
@@ -29,6 +27,15 @@ private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : S
     }
     ( posNums.toSeq, negNums.toSeq )
   }
+
+}
+
+private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[Seq[Seq[Seq[Int]]]] ) extends Module {
+
+  val io = IO( new Bundle {
+    val dataIn = Input(Vec( weights(0).size, Vec( weights(0)(0).size, Vec( weights(0)(0)(0).size, dtype.cloneType ))))
+    val dataOut = Output(Vec( weights.size, dtype.cloneType ))
+  })
 
   def computeSum( posNums : Seq[T], negNums : Seq[T] ) : (T, Int, Int) = {
     var plusList = posNums.toList
@@ -75,7 +82,7 @@ private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : S
 
   val currData = io.dataIn
   val outSums = weights.map( conv => {
-    val numsOut = mapToWires( conv, io.dataIn )
+    val numsOut = TriConvSum.mapToWires( conv, io.dataIn )
     val res = computeSum( numsOut._1, numsOut._2 )
     ( res._1, res._2 )
   })
@@ -84,7 +91,101 @@ private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : S
 
   io.dataOut := Vec( outSums.map( r => ShiftRegister( r._1, latency - r._2 )) )
 
+}
 
+private class SerialTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[Seq[Seq[Seq[Int]]]], bitWidth : Int ) extends Module {
+
+  val io = IO( new Bundle {
+    val start = Input( Bool() )
+    val dataIn = Input( Vec( weights(0).size, Vec( weights(0)(0).size, Vec( weights(0)(0)(0).size, dtype.cloneType ))))
+    val dataOut = Output(Vec( weights.size, dtype.cloneType ))
+  })
+
+  val inWidth = dtype.cloneType.getWidth
+  val nIter = inWidth / bitWidth
+  val log2BW = log2Ceil( bitWidth )
+
+  def computeSum( posNums : Seq[UInt], negNums : Seq[UInt] ) : (UInt, Bool, Int) = {
+    var plusList = posNums.toList.map( x => { ( x, io.start ) } )
+    var minusList = negNums.toList.map( x => { ( x, io.start ) } )
+
+    var stages = 0
+    while ( plusList.size > 1 || minusList.size > 0 ) {
+      val plusOps = plusList.grouped( 2 ).toList.partition( _.size > 1 )
+      plusList = plusOps._1.map( x => SerialAdder.add( x(0)._1, x(1)._1, x(0)._2, bitWidth ) )
+      val minusOps = minusList.grouped( 2 ).toList.partition( _.size > 1 )
+      minusList = minusOps._1.map( x => SerialAdder.add( x(0)._1, x(1)._1, x(0)._2, bitWidth ) )
+      if ( plusOps._2.size == 1 && minusOps._2.size == 1 ) {
+        plusList = SerialAdder.sub(
+          plusOps._2.head.head._1,
+          minusOps._2.head.head._1,
+          plusOps._2.head.head._2,
+          bitWidth
+        ) :: plusList
+      } else if ( plusOps._2.size == 1 )
+        plusList = (
+          RegNext( plusOps._2.head.head._1 ),
+          RegNext( plusOps._2.head.head._2 ) ) :: plusList
+      else if ( minusOps._2.size == 1 ) {
+        plusList = SerialAdder.sub(
+          0.U( bitWidth.W ),
+          minusOps._2.head.head._1,
+          minusOps._2.head.head._2,
+          bitWidth
+        ) :: plusList
+      }
+      stages += 1
+    }
+    if ( plusList.size == 0 )
+      return ( 0.U( bitWidth.W ), true.B, 0 )
+    return ( plusList.head._1, plusList.head._2, stages )
+  }
+
+  val nibbleCntr = RegInit( 0.U( log2BW.W ) )
+  when ( nibbleCntr > 0.U || io.start ) {
+    nibbleCntr := nibbleCntr + 1.U
+  }
+  val dataNibble = Wire( Vec(
+    weights(0).size,
+    Vec( weights(0)(0).size,
+      Vec( weights(0)(0)(0).size,
+        0.U( bitWidth.W ).cloneType ))))
+  for ( x <- 0 until nIter ) {
+    when ( nibbleCntr === x.U ) {
+      for ( i <- 0 until weights(0).size ) {
+        for ( j <- 0 until weights(0)(0).size ) {
+          for ( k <- 0 until weights(0)(0)(0).size )
+            dataNibble( i )( j )( k ) := io.dataIn( i )( j )( k )( bitWidth * ( x + 1 ) - 1, bitWidth*x )
+        }
+      }
+    }
+  }
+  val outSums = weights.map( conv => {
+    val numsOut = TriConvSum.mapToWires( conv, dataNibble )
+    computeSum( numsOut._1, numsOut._2 )
+  })
+
+  val nibbleLat = outSums.map( _._3 ).max
+
+  val nibbleOut = outSums.map( r => ShiftRegister( r._1, nibbleLat - r._3 ))
+  val nibbleStarts = outSums.map( r => ShiftRegister( r._2, nibbleLat - r._3 ))
+
+  val unnibble = nibbleOut.zip( nibbleStarts ).map( x => {
+    val nibCntr = RegInit( 0.U( log2BW.W ) )
+    when ( x._2 || nibCntr > 0.U ) {
+      nibCntr := nibCntr + 1.U
+    }
+    val outReg = Reg( Vec( nIter, 0.U( bitWidth.W ).cloneType ) )
+    for ( i <- 0 until nIter ) {
+      when ( nibCntr === i.U ) {
+        outReg( i ) := x._1
+      }
+    }
+    outReg.reverse.reduce( _ ## _ ).asTypeOf( dtype )
+  })
+
+  val latency = nibbleLat + nIter
+  io.dataOut := Vec( unnibble )
 }
 
 /* take in 1, 0, -1 weights
@@ -98,56 +199,44 @@ class TriConvSum( val weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) extends
 
   val tPutRounded = math.ceil( throughput ).toInt
 
+  val inWidth = dtype.cloneType.getWidth
+  val bitWidth = math.ceil( inWidth * tput ).toInt
+  val log2BW = log2Ceil( inWidth / bitWidth )
+  val rdyCnt = RegInit( 0.U( log2BW.W ) )
+  if ( bitWidth < inWidth ) {
+    // set ready signals
+    when ( io.dataIn.valid || rdyCnt > 0.U ) {
+      rdyCnt := rdyCnt + 1.U
+    }
+    io.dataIn.ready := ( rdyCnt === (bitWidth - 1).U || ( !io.dataIn.valid && rdyCnt === 0.U ) ) && io.dataOut.ready
+  }
+
   val dataVec = inIOToVVV( weights(0)(0).size, weights(0)(0)(0).size )
   val convRes = ( 0 until tPutRounded ).map( idx => {
-    val pConv = Module( new ParrallelTriConvSum( dtype, weights ) )
-    pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
-      dataVec( wIdx + weights(0).size * idx )
-    }))
-    ( pConv.io.dataOut, pConv.latency )
+    if ( bitWidth < inWidth ) {
+      val pConv = Module( new SerialTriConvSum( dtype, weights, bitWidth ) )
+      pConv.io.start := ( io.dataIn.valid && rdyCnt === 0.U )
+      pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
+        dataVec( wIdx + weights(0).size * idx )
+      }))
+      ( pConv.io.dataOut, pConv.latency )
+    } else {
+      val pConv = Module( new ParrallelTriConvSum( dtype, weights ) )
+      pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
+        dataVec( wIdx + weights(0).size * idx )
+      }))
+      ( pConv.io.dataOut, pConv.latency )
+    }
   })
 
-  val convLat = convRes.map( _._2 ).max
+  val latency = convRes.map( _._2 ).max
 
   val convOut = convRes.map( o => {
-    ShiftRegister( o._1, convLat - o._2 )
+    ShiftRegister( o._1, latency - o._2 )
   }).reduce( (a, b) => Vec( a ++ b ) )
 
-  val convValid = ShiftRegister( io.dataIn.valid, convLat, false.B, true.B )
+  val convValid = ShiftRegister( io.dataIn.valid, latency, false.B, true.B )
 
-  var muxLat = 0
-  val noToMux = ( 1 / tput ).toInt
-  if ( tput < 1 ) {
-    assert( noToMux * tput == 1, "Must be integer" )
-    assert( noToMux == 1 << log2Ceil( noToMux.toInt ), "Must be power of 2 to mux" )
-    val cntrCmp = Wire( false.B.cloneType )
-    val cntr = Counter( io.dataIn.valid | cntrCmp, noToMux )
-    cntrCmp := cntr._1 > 0.U
-    io.dataIn.ready := !io.dataIn.valid & !cntrCmp
-    when ( cntr._1 === ( noToMux - 1 ).U ) {
-      io.dataIn.ready := io.dataOut.ready
-    }
-    val grpSize = convOut.size / noToMux
-    val convGrp = convOut.grouped( grpSize ).toSeq.map( Vec( _ ) )
-    val mapping = convGrp.zipWithIndex.map( x => { ( x._2.U, x._1 ) } )
-    val cntrDelay = ShiftRegister( cntr._1, convLat )
-    val convMux = MuxLookup( cntrDelay, convGrp.head, mapping )
-    val convReg = Reg( convOut.cloneType )
-    for ( i <- 0 until noToMux ) {
-      when ( cntrDelay === i.U ) {
-        for ( j <- 0 until grpSize )
-          convReg( i * grpSize + j ) := convMux( j )
-      }
-    }
-    muxLat = noToMux
-
-    io.dataOut.bits := convReg
-    val vldOut = ShiftRegister( convValid, muxLat, false.B, true.B )
-    io.dataOut.valid := vldOut
-  } else {
-    io.dataOut.bits := convOut
-    io.dataOut.valid := convValid
-  }
-  // find the max latency
-  val latency = convLat + muxLat
+  io.dataOut.bits := convOut
+  io.dataOut.valid := convValid
 }
