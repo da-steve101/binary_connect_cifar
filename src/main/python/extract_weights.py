@@ -154,16 +154,24 @@ def get_image( fname ):
     adj_stddev = max( stddev, np.sqrt( 1 / ( 32 * 32 * 3 ) ) )
     return (img - nu)/adj_stddev
 
-def inference( img, var_dict ):
+def inference( img, var_dict, filename = None ):
+    if filename is not None:
+        write_to_file( img, filename + ".csv", no_dims = 3 )
     for i in range( 2 ):
         img, a, b = compute_conv_lyr( img, var_dict, i + 1, 3 )
     img = compute_max_pool( img )
+    if filename is not None:
+        write_to_file( img, filename + "_mp_1.csv", no_dims = 3 )
     for i in range( 2 ):
         img, a, b = compute_conv_lyr( img, var_dict, i + 3, 3 )
     img = compute_max_pool( img )
+    if filename is not None:
+        write_to_file( img, filename + "_mp_2.csv", no_dims = 3 )
     for i in range( 2 ):
         img, a, b = compute_conv_lyr( img, var_dict, i + 5, 3 )
     img = compute_max_pool( img )
+    if filename is not None:
+        write_to_file( img, filename + "_mp_3.csv", no_dims = 3 )
     img, a, b = compute_dense_lyr( img, var_dict, "fc_1024", 3 )
     img = compute_relu( img )
     pred, a, b = compute_dense_lyr( img, var_dict, "softmax", 3 )
@@ -172,9 +180,23 @@ def inference( img, var_dict ):
 def max_pred( pred, labels ):
     return labels[ np.argmax( pred ) ]
 
+def write_network( var_dict ):
+    for i in range( 6 ):
+        conv_str = "conv" + str( i + 1 )
+        conv, scaling_factor = get_ternary( var_dict[conv_str] )
+        write_to_file( conv.tolist(), "../resources/" + conv_str + "_weights.csv" )
+        ab = get_AB(
+          conv_str,
+          var_dict,
+          scaling_factor,
+          0,
+          5
+        )
+        write_to_file( ab, "../resources/" + conv_str + "_ab.csv", no_dims = 2 )
+
 if __name__ == "__main__":
     img_names = sys.argv[1:]
-    model_name = "model.ckpt-0"
+    model_name = "sparse_twn_1.4"
     output_file = open( "image_predictions.cnn", "w" )
     wrt = csv.writer( output_file )
     if os.path.exists( model_name + "_dict.pkl" ):
@@ -195,22 +217,10 @@ if __name__ == "__main__":
                "horse",
                "ship",
                "truck" ]
+    write_network( var_dict )
     for img_name in img_names:
         img = get_image( img_name )
         wrt.writerow( img )
-        pred = inference( img, var_dict )
+        pred = inference( img, var_dict, img_name.split('.png')[0] )
         print( img_name + " is " + max_pred( pred, labels ) )
     output_file.close()
-
-    '''
-    for i in range( 6 ):
-        conv_str = "conv" + str( i + 1 )
-        conv, conv_scaling = get_ternary( var_dict[conv_str] )
-        write_to_file( conv.tolist(), "../resources/" + conv_str + "_weights.csv" )
-        ab = get_AB_lyr( conv_str, conv_scaling, 5 )
-        f_out = open( "../resources/" + conv_str + "_bn.csv", "w" )
-        wrt = csv.writer( f_out )
-        for x in ab:
-            wrt.writerow( x )
-        f_out.close()
-    '''
