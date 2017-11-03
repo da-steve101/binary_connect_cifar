@@ -155,6 +155,7 @@ def get_image( fname ):
     return (img - nu)/adj_stddev
 
 def inference( img, var_dict, filename = None ):
+    img = round_to( img, 3 )
     if filename is not None:
         write_to_file( img, filename + ".csv", no_dims = 3 )
     for i in range( 2 ):
