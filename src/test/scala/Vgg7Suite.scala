@@ -13,17 +13,17 @@ class Vgg7Tests( c : Vgg7 ) extends PeekPokeTester( c ) {
   val cycs = 10000
   val imgOutSize = c.imgOutSize
 
-  // val bufferedSource = scala.io.Source.fromFile("src/main/resources/airplane4.csv")
+  val bufferedSource = scala.io.Source.fromFile("src/main/resources/airplane4.csv")
   // val bufferedSource = scala.io.Source.fromFile("src/main/resources/airplane4_conv1_relu.csv")
   // val bufferedSource = scala.io.Source.fromFile("src/main/resources/airplane4_conv2_relu.csv")
-  val bufferedSource = scala.io.Source.fromFile("src/main/resources/airplane4_mp_1.csv")
+  // val bufferedSource = scala.io.Source.fromFile("src/main/resources/airplane4_mp_1.csv")
   val img_raw = bufferedSource.getLines.toList
   val img = img_raw.map( _.split(",").toList.map( x => {
     BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
   }) ).grouped( c.imgSize ).toList
 
-  val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_mp_2.csv")
-  // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_mp_1.csv")
+  // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_mp_2.csv")
+  val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_mp_1.csv")
   // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_conv2_relu.csv")
   // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_conv2_act.csv")
   // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_conv1_relu.csv")

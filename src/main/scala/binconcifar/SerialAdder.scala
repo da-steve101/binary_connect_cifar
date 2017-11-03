@@ -47,32 +47,31 @@ class SerialAdder( add : Boolean, bitWidth : Int ) extends Module {
     val startOut = Output( Bool() )
   })
 
-  val regA = RegNext( io.a )
-  val regB = {
+  val bInv = {
     if ( add )
-      RegNext( io.b )
+      io.b
     else
-      RegNext( ~io.b )
+      ~io.b
   }
   val carry_in = Reg( UInt( 1.W ) )
   val tmp = Wire( UInt( ( 1 + bitWidth ).W ) )
 
-  val aPad = 0.U( 1.W ) ## regA
-  val bPad = 0.U( 1.W ) ## regB
-  val carryPad = 0.U( bitWidth.W ) ## carry_in
-
-  tmp := aPad + bPad + carryPad
-
-  carry_in := tmp(bitWidth)
-  when ( io.start ) {
-    carry_in := {
-      if ( add )
-        0.U
-      else
-        1.U
-    }
+  val aPad = 0.U( 1.W ) ## io.a
+  val bPad = 0.U( 1.W ) ## bInv
+  val carry_use = 0.U( bitWidth.W ) ## carry_in
+  val carry_init = {
+    if ( add )
+      0.U( ( bitWidth + 1 ).W )
+    else
+      1.U( ( bitWidth + 1 ).W )
   }
 
-  io.out := tmp(bitWidth - 1,0)
+  tmp := aPad + bPad + carry_use
+  when ( io.start ) {
+    tmp := aPad + bPad + carry_init
+  }
+
+  carry_in := tmp(bitWidth)
+  io.out := RegNext( tmp(bitWidth - 1,0) )
   io.startOut := RegNext( io.start )
 }
