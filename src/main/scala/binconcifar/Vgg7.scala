@@ -141,7 +141,7 @@ class Vgg7 extends Module {
 
   io.dataOut <> mp1
   /*
-  val tPutPart2 = math.max( tPut / 4, 1 )
+  val tPutPart2 = tPut / 4
   val tPutPart2Int = math.max( tPutPart2, 1 ).toInt
   val mp1Rev = reverseOrder( mp1, tPutPart2Int )
   val imgSizePart2 = imgSize / 2
@@ -154,7 +154,7 @@ class Vgg7 extends Module {
 
   // io.dataOut <> mp2
 
-  val tPutPart3 = math.max( tPutPart2 / 4, 1 )
+  val tPutPart3 = tPutPart2 / 4
   val tPutPart3Int = math.max( tPutPart3, 1 ).toInt
   val mp2Rev = reverseOrder( mp2, tPutPart3Int )
   val imgSizePart3 = imgSize / 4
