@@ -8,7 +8,7 @@ import scala.util.Random
 import binconcifar.Vgg7
 import scala.collection.mutable.ArrayBuffer
 
-class Vgg7Tests( c : Vgg7 ) extends PeekPokeTester( c ) {
+class Vgg7Tests( c : Vgg7[SInt] ) extends PeekPokeTester( c ) {
   val myRand = new Random
   val cycs = 10000
   val imgOutSize = c.imgOutSize
@@ -70,7 +70,7 @@ class Vgg7Suite extends ChiselFlatSpec {
   behavior of "Vgg7Suite"
   backends foreach {backend =>
     it should s"correctly compute the convolution $backend" in {
-      Driver(() => { new Vgg7  }, "verilator", false )( c =>
+      Driver(() => { new Vgg7( SInt( 16.W ) )  }, "verilator", false )( c =>
         new Vgg7Tests( c ) ) should be (true)
     }
   }

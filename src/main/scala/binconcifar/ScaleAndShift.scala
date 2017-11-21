@@ -4,33 +4,39 @@ import chisel3._
 import chisel3.util._
 import scala.collection.mutable.ArrayBuffer
 
-class ScaleAndShift (
+class ScaleAndShift[ T <: SInt] (
+  dtype : T,
   conv_prec : Int,
   ab_prec : Int,
   val a : Seq[Int],
   val b : Seq[Int],
-  tput : Double ) extends
-    NNLayer( tput,
-      a.size,
-      a.size,
-      tput.toInt )  {
+  tput : Double
+) extends NNLayer(
+  dtype,
+  tput,
+  a.size,
+  a.size,
+  tput.toInt ) {
+
+  for ( d <- io.vldMask )
+    d := false.B
 
   val to_mult = io.dataIn.bits.grouped( a.size ).toList
   val zero = 0.U.asTypeOf( dtype )
   val mult_res = to_mult.map( x => x.zipWithIndex.map( z => {
-    val scale = Wire( dtype.cloneType )
-    val aTmp = Reg( a( z._2 ).S.cloneType )
-    aTmp := a( z._2 ).S
+    val scale = Wire( dtype )
+    val aTmp = Reg( dtype )
+    aTmp := a( z._2 ).S.asInstanceOf[T]
     val zTmp = Reg( z._1.cloneType )
     zTmp := z._1
-    val bTmp = Reg( ( b( z._2 ) << conv_prec ).S.cloneType )
-    bTmp := ( b( z._2 ) << conv_prec ).S
+    val bTmp = Reg( dtype )
+    bTmp := ( b( z._2 ) << conv_prec ).S.asInstanceOf[T]
     scale := RegNext( aTmp * zTmp )
     val shift = RegNext( scale + bTmp )
     val output = shift >> ab_prec.U
-    val relu = Wire( dtype.cloneType )
+    val relu = Wire( dtype )
     relu := zero
-    when ( output >= zero ) {
+    when ( output > zero ) {
       relu := output
     }
     RegNext( relu )

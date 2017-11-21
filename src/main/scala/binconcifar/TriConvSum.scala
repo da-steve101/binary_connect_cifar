@@ -8,7 +8,7 @@ import scala.collection.mutable.ArrayBuffer
 
 object TriConvSum {
 
-  def mapToWires[T <: Bits with Num[T]](
+  def mapToWires[ T <: Bits ](
     conv : Seq[Seq[Seq[Int]]],
     currData : Seq[Seq[Seq[T]]]
   ) : (Seq[T], Seq[T]) = {
@@ -30,14 +30,17 @@ object TriConvSum {
 
 }
 
-private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[Seq[Seq[Seq[Int]]]] ) extends Module {
+private class ParrallelTriConvSum (
+  dtype : SInt,
+  weights : Seq[Seq[Seq[Seq[Int]]]]
+) extends Module {
 
   val io = IO( new Bundle {
     val dataIn = Input(Vec( weights(0).size, Vec( weights(0)(0).size, Vec( weights(0)(0)(0).size, dtype.cloneType ))))
     val dataOut = Output(Vec( weights.size, dtype.cloneType ))
   })
 
-  def computeSum( posNums : Seq[T], negNums : Seq[T] ) : (T, Int, Int) = {
+  def computeSum( posNums : Seq[SInt], negNums : Seq[SInt] ) : (SInt, Int, Int) = {
     var plusList = posNums.toList
     var minusList = negNums.toList
 
@@ -47,8 +50,8 @@ private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : S
     var stages = 0
     while ( plusList.size > 1 || minusList.size > 0 ) {
       // group by 3, partition on if not single op as should just add otherwise
-      val plusOps : (List[List[T]], List[List[T]]) = plusList.grouped(3).toList.partition( _.size > 1 )
-      plusList = plusOps._1.map( x => RegNext( x.reduce( _ + _ ) ) ).toList
+      val plusOps : (List[List[SInt]], List[List[SInt]]) = plusList.grouped(3).toList.partition( _.size > 1 )
+      plusList = plusOps._1.map( x => RegNext( x.reduce( ( a, b ) => a + b ) ) ).toList
       opsTotal += plusOps._1.size
       val negOps = minusList.grouped(3).toList.partition( _.size > 1 )
       opsTotal += negOps._1.size
@@ -93,7 +96,11 @@ private class ParrallelTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : S
 
 }
 
-private class SerialTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[Seq[Seq[Seq[Int]]]], bitWidth : Int ) extends Module {
+private class SerialTriConvSum (
+  dtype : SInt,
+  weights : Seq[Seq[Seq[Seq[Int]]]],
+  bitWidth : Int
+) extends Module {
 
   val io = IO( new Bundle {
     val start = Input( Bool() )
@@ -192,11 +199,21 @@ private class SerialTriConvSum[T <: Bits with Num[T]]( dtype : T, weights : Seq[
 /* take in 1, 0, -1 weights
  * perform the convolution on them
  */
-class TriConvSum( val weights : Seq[Seq[Seq[Seq[Int]]]], tput : Double ) extends
-    NNLayer( math.ceil( tput ), weights(0)(0)(0).size * weights(0)(0).size * weights(0).size,
-      weights.size, math.ceil( tput ).toInt )  {
+class TriConvSum (
+  val dtype : SInt,
+  val weights : Seq[Seq[Seq[Seq[Int]]]],
+  tput : Double
+) extends NNLayer(
+  dtype,
+  math.ceil( tput ),
+  weights(0)(0)(0).size * weights(0)(0).size * weights(0).size,
+  weights.size,
+  math.ceil( tput ).toInt
+) {
 
   io.dataIn.ready := io.dataOut.ready
+  for ( d <- io.vldMask )
+    d := false.B
 
   val tPutRounded = math.ceil( throughput ).toInt
 

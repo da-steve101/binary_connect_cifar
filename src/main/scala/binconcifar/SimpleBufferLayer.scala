@@ -8,7 +8,8 @@ import scala.collection.mutable.ArrayBuffer
   * It streams in an image of "imgSize x imgSize x grpSize" and outputs blocks of outFormat
   * every "stride" pixels with or without padding as some throughput "tPut"
   */
-class SimpleBufferLayer(
+class SimpleBufferLayer[ T <: SInt](
+  val dtype : T,
   val imgSize : Int,
   val grpSize : Int,
   val outFormat : (Int, Int, Int),
@@ -18,6 +19,7 @@ class SimpleBufferLayer(
   tPut : Int,
   debug : Boolean = false
 ) extends NNLayer(
+  dtype,
   tPut.toDouble,
   grpSize,
   outFormat._1 * outFormat._2 * outFormat._3,

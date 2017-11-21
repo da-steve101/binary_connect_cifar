@@ -6,14 +6,15 @@ import chisel3.util._
 import scala.util.Random
 import scala.collection.mutable.ArrayBuffer
 
-class Vgg7 extends Module {
+class Vgg7[ T <: SInt]( dtype : T ) extends Module {
 
   val tPut = 1.0
   val tPutPart1Int = math.max( tPut, 1 ).toInt
   val tPutOut = 1 //tPut / 4
   val imgSize = 32
   val imgOutSize = imgSize / 2
-  val dtype = SInt( 16.W )
+  // val dtype = SInt( 16.W )
+  // type T = dtype.type
   val fracBits = 3
   val abFracBits = 5
   val inGrp = 3
@@ -22,18 +23,18 @@ class Vgg7 extends Module {
   val noIn = tPutPart1Int
 
   val io = IO(new Bundle {
-    val dataIn = Flipped(Decoupled( Vec( tPutPart1Int * inGrp, dtype.cloneType ) ))
-    val dataOut = Decoupled( Vec( tPutOut * noOut, dtype.cloneType ) )
+    val dataIn : DecoupledIO[Vec[T]] = Flipped(Decoupled( Vec( tPutPart1Int * inGrp, dtype ) ))
+    val dataOut : DecoupledIO[Vec[T]] = Decoupled( Vec( tPutOut * noOut, dtype.cloneType ) )
   })
 
   def createConvLyr(
     idx : Int,
-    inputVec : DecoupledIO[Vec[SInt]],
+    inputVec : DecoupledIO[Vec[T]],
     tPutLyr : Double,
     imgSize : Int,
     noFilt : Int,
     outFormat : ( Int, Int, Int )
-  ) : DecoupledIO[Vec[SInt]] = {
+  ) : DecoupledIO[Vec[T]] = {
 
     val bufferedSource = scala.io.Source.fromFile("src/main/resources/conv" + idx + "_weights.csv" )
     val weights_raw = bufferedSource.getLines.toList
@@ -49,10 +50,11 @@ class Vgg7 extends Module {
     val ab = ab_raw.map( _.split(",").toList.map( x => ( x.toFloat * ( 1 << abFracBits ) ).toInt ) )
 
     val tPutInt = math.max( tPutLyr, 1 ).toInt
-    val blMod = Module( new SimpleBufferLayer( imgSize, outFormat._3, outFormat, 10, 1, true, tPutInt ) )
-    val conv1 = Module( new TriConvSum( weights_trans, tPutLyr ) )
+    val blMod = Module( new SimpleBufferLayer( dtype, imgSize, outFormat._3, outFormat, 10, 1, true, tPutInt ) )
+    val conv1 = Module( new TriConvSum( dtype, weights_trans, tPutLyr ) )
 
     val scaleShift = Module( new ScaleAndShift(
+      dtype,
       fracBits,
       abFracBits,
       ab(0)take( noFilt ),
@@ -67,15 +69,15 @@ class Vgg7 extends Module {
   }
 
   def createPoolLyr(
-    inputVec : DecoupledIO[Vec[SInt]],
+    inputVec : DecoupledIO[Vec[T]],
     tPutLyr : Int,
     imgSize : Int,
     kernelFormat : ( Int, Int, Int )
-  ) : DecoupledIO[Vec[SInt]] = {
+  ) : DecoupledIO[Vec[T]] = {
 
-    val blMod = Module( new SimpleBufferLayer( imgSize, kernelFormat._3, kernelFormat, 2, 2, false, tPutLyr ) )
+    val blMod = Module( new SimpleBufferLayer( dtype, imgSize, kernelFormat._3, kernelFormat, 2, 2, false, tPutLyr ) )
     val tPutPool = math.max( tPutLyr / 2, 1 ).toInt // divide by stride
-    val poolMod = Module( new PoolLayer( tPutPool, kernelFormat ) )
+    val poolMod = Module( new PoolLayer( dtype, tPutPool, kernelFormat ) )
     blMod.io.dataIn <> inputVec
     poolMod.io.dataIn <> blMod.io.dataOut
     val outIo = {
@@ -88,8 +90,8 @@ class Vgg7 extends Module {
   }
 
   def halveTPut(
-    inputVec : DecoupledIO[Vec[SInt]]
-  ) : DecoupledIO[Vec[SInt]] = {
+    inputVec : DecoupledIO[Vec[T]]
+  ) : DecoupledIO[Vec[T]] = {
     val regFlag = RegInit( false.B )
     val secondHalf = Vec( inputVec.bits.take( inputVec.bits.size / 2 ) )
     val firstHalf = Vec( inputVec.bits.drop( inputVec.bits.size / 2 ) )
@@ -112,17 +114,17 @@ class Vgg7 extends Module {
   }
 
   def spreadStride(
-    inputVec : DecoupledIO[Vec[SInt]],
+    inputVec : DecoupledIO[Vec[T]],
     queueSize : Int
-  ) : DecoupledIO[Vec[SInt]] = {
+  ) : DecoupledIO[Vec[T]] = {
     val padQueue = Queue( inputVec, queueSize )
     halveTPut( padQueue )
   }
 
   def reverseOrder(
-    inputVec : DecoupledIO[Vec[SInt]],
+    inputVec : DecoupledIO[Vec[T]],
     tPutLyr : Int
-  ) : DecoupledIO[Vec[SInt]] = {
+  ) : DecoupledIO[Vec[T]] = {
     val noFilt = inputVec.bits.size / tPutLyr
     val bitsGrp = inputVec.bits.toList.grouped( noFilt ).toList.reverse
     val bitsOut = Vec( bitsGrp.reduce( _ ++ _ ) )

@@ -6,11 +6,13 @@ package binconcifar
 import chisel3._
 import chisel3.util._
 
-abstract class NNLayer( val throughput : Double, inSize : Int,
-  outSize : Int, val noOut : Int ) extends Module {
-
-  val dtype = Wire(SInt( 16.W ))
-  type T = SInt
+abstract class NNLayer[ T <: SInt](
+  dtype : T,
+  val throughput : Double,
+  inSize : Int,
+  outSize : Int,
+  val noOut : Int
+) extends Module {
 
   if ( throughput >= 1 )
     assert( throughput == throughput.toInt,

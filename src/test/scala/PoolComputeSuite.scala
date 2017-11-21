@@ -7,7 +7,7 @@ import scala.util.Random
 import binconcifar.PoolLayer
 import scala.collection.mutable.ArrayBuffer
 
-class PoolComputeTests( c : PoolLayer ) extends PeekPokeTester( c ) {
+class PoolComputeTests( c : PoolLayer[SInt] ) extends PeekPokeTester( c ) {
   val myRand = new Random
   val cycs = c.latency*5
 
@@ -68,7 +68,7 @@ class PoolComputeSuite extends ChiselFlatSpec {
         for ( tPut <- 1 until 6 ) {
           val kernShape = ( 2, 2, grpSize )
           Driver(() => {
-            new PoolLayer( tPut, kernShape )
+            new PoolLayer( SInt( 16.W ), tPut, kernShape )
           }, backend, true )( c => new PoolComputeTests( c ) ) should be (true)
         }
       }

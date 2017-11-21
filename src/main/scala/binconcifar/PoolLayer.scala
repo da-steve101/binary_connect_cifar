@@ -6,7 +6,7 @@ import chisel3.util._
 
 /** A Max Pool something
   */
-private class MaxPool[T <: Bits with Num[T]]( dtype : T, kernShape : ( Int, Int, Int ) ) extends Module {
+private class MaxPool[T <: SInt]( dtype : T, kernShape : ( Int, Int, Int ) ) extends Module {
 
   val io = IO( new Bundle {
     val dataIn = Input(Vec( kernShape._1, Vec( kernShape._2, Vec( kernShape._3, dtype.cloneType ))))
@@ -50,11 +50,22 @@ private class MaxPool[T <: Bits with Num[T]]( dtype : T, kernShape : ( Int, Int,
 
 }
 
-class PoolLayer( tput : Double, val kernShape : (Int, Int, Int) )
-    extends NNLayer( tput, kernShape._1 * kernShape._2 * kernShape._3,
-      kernShape._3, tput.toInt ) {
+class PoolLayer[ T <: SInt](
+  val dtype : T,
+  tput : Double,
+  val kernShape : (Int, Int, Int)
+) extends NNLayer(
+  dtype,
+  tput,
+  kernShape._1 * kernShape._2 * kernShape._3,
+  kernShape._3,
+  tput.toInt
+) {
 
   io.dataIn.ready := io.dataOut.ready
+
+  for ( d <- io.vldMask )
+    d := false.B
 
   var tmpLat = -1
 

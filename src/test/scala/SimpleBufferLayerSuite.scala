@@ -7,7 +7,7 @@ import scala.util.Random
 import binconcifar.SimpleBufferLayer
 import scala.collection.mutable.ArrayBuffer
 
-class SimpleBufferLayerTests( c : SimpleBufferLayer ) extends PeekPokeTester( c ) {
+class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTester( c ) {
 
   val convSize = c.outFormat._2
   val outFormat = c.outFormat
@@ -120,7 +120,7 @@ class SimpleBufferLayerSuite extends ChiselFlatSpec {
               outFormat + ", qSize = " + qSize + ", stride = " + stride + ", padding = " +
               padding + ", tPut = " + tPut )
             Driver(() => {
-              new SimpleBufferLayer( imgSize, grpSize, outFormat, qSize, stride, padding, tPut )
+              new SimpleBufferLayer( SInt( 16.W ), imgSize, grpSize, outFormat, qSize, stride, padding, tPut )
             }, backend )( c => new SimpleBufferLayerTests( c ) ) should be (true)
           }
         }

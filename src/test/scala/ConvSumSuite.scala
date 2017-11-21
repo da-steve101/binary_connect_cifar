@@ -93,7 +93,7 @@ class ConvSumSuite extends ChiselFlatSpec {
           for ( tPut <- 1 until 6 ) {
             println( "outFormat = " + outFormat + ", tPut " + tPut )
             Driver(() => {
-              new TriConvSum( weights, tPut )
+              new TriConvSum( SInt( 16.W ), weights, tPut )
             }, backend, true )( c => new ConvSumTests( c ) ) should be (true)
           }
         }
