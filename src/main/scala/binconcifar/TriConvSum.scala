@@ -159,11 +159,15 @@ private class SerialTriConvSum (
       Vec( weights(0)(0)(0).size,
         0.U( bitWidth.W ).cloneType ))))
   for ( x <- 0 until nIter ) {
-    when ( nibbleCntr === x.U ) {
-      for ( i <- 0 until weights(0).size ) {
-        for ( j <- 0 until weights(0)(0).size ) {
-          for ( k <- 0 until weights(0)(0)(0).size )
-            dataNibble( i )( j )( k ) := io.dataIn( i )( j )( k )( bitWidth * ( x + 1 ) - 1, bitWidth*x )
+    for ( i <- 0 until weights(0).size ) {
+      for ( j <- 0 until weights(0)(0).size ) {
+        for ( k <- 0 until weights(0)(0)(0).size ) {
+          if ( x > 0 ) {
+            when ( nibbleCntr === x.U ) {
+              dataNibble( i )( j )( k ) := io.dataIn( i )( j )( k )( bitWidth * ( x + 1 ) - 1, bitWidth*x )
+            }
+          } else
+              dataNibble( i )( j )( k ) := io.dataIn( i )( j )( k )( bitWidth * ( x + 1 ) - 1, bitWidth*x )
         }
       }
     }
