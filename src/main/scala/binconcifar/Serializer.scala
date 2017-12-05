@@ -36,11 +36,11 @@ class Serializer[T <: Bits]( genType : T, widthIn : Int, widthOut : Int) extends
 
   // compute GCD then attach to vec of combined
   val widthGcd = { if ( widthIn > widthOut ) gcd( widthIn, widthOut ) else gcd( widthOut, widthIn ) }
-  val gcdType = Wire( UInt( (widthGcd*genWidth).W ) )
+  val gcdType = UInt( (widthGcd*genWidth).W )
   val gcdWidthIn = widthIn/widthGcd
   val gcdWidthOut = widthOut/widthGcd
-  val vecInComb = Wire( Vec( gcdWidthIn, gcdType ) )
-  val vecOutComb = Wire( Vec( gcdWidthOut, gcdType ) )
+  val vecInComb = Wire( Vec( gcdWidthIn, gcdType.cloneType ) )
+  val vecOutComb = Wire( Vec( gcdWidthOut, gcdType.cloneType ) )
 
   for( x <- vecInComb.toArray.zipWithIndex ) {
     val ary = new ArrayBuffer[T]()
@@ -151,7 +151,7 @@ class Serializer[T <: Bits]( genType : T, widthIn : Int, widthOut : Int) extends
 
     // Store the last gcdWidthOut - 1 values of width In
     val tmpRegWidth = { if ( gcdWidthOut == 1 ) 1 else gcdWidthOut - 1 }
-    val vecRegType = Wire( Vec( tmpRegWidth, gcdType.cloneType ) )
+    val vecRegType = Vec( tmpRegWidth, gcdType.cloneType )
     val tmpReg = Reg( vecRegType.cloneType )
     val inPos = RegInit( 0.U( inBW.W ) )
     val remaining = gcdWidthOut.U( inBW.W + 1 ) - inPos
