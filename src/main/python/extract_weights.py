@@ -13,8 +13,8 @@ def get_variables( model_name ):
     import tensorflow as tf
     config = tf.ConfigProto(allow_soft_placement=True)
     sess = tf.Session( config = config )
-    new_saver = tf.train.import_meta_graph("train_out/" + model_name + ".meta")
-    new_saver.restore( sess, "train_out/" + model_name )
+    new_saver = tf.train.import_meta_graph( model_name + ".meta")
+    new_saver.restore( sess, model_name )
     all_tri = tf.get_collection( tf.GraphKeys.WEIGHTS )
     var_dict = {}
     for x in all_tri:
@@ -196,8 +196,8 @@ def write_network( var_dict ):
         write_to_file( ab, "../resources/" + conv_str + "_ab.csv", no_dims = 2 )
 
 if __name__ == "__main__":
-    img_names = sys.argv[1:]
-    model_name = "sparse_twn_1.4"
+    model_name = sys.argv[1]
+    img_names = sys.argv[2:]
     output_file = open( "image_predictions.cnn", "w" )
     wrt = csv.writer( output_file )
     if os.path.exists( model_name + "_dict.pkl" ):
