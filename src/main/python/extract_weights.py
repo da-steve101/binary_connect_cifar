@@ -8,6 +8,9 @@ import sys
 import pickle
 import os
 import csv
+from ImageIter import ImageIter
+from multiprocessing import Process, Manager
+from tqdm import tqdm
 
 def get_variables( model_name ):
     import tensorflow as tf
@@ -109,18 +112,18 @@ def compute_max_pool( img ):
 def linear_shift( img, a, b, prec ):
     return floor_to( a * img + b, prec )
 
-def compute_conv_lyr( img, var_dict, idx, conv_prec = 5 ):
+def compute_conv_lyr( img, var_dict, idx, conv_prec = 5, ab_prec = 5 ):
     lyr = "conv" + str(idx)
     conv_weights = var_dict[lyr]
     img = round_to( img, conv_prec )
     conv_res, scaling_factor = compute_conv( img, conv_weights )
-    print_info( "conv" + str(idx), conv_res )
+    # print_info( "conv" + str(idx), conv_res )
     a, b = get_AB(
         lyr,
         var_dict,
         scaling_factor,
         0,
-        5
+        ab_prec
     )
     bn_res = linear_shift( conv_res, a, b, conv_prec )
     #print_info( "conv_bn" + str(idx), bn_res )
@@ -129,7 +132,7 @@ def compute_conv_lyr( img, var_dict, idx, conv_prec = 5 ):
     relu_res = floor_to( relu_res, conv_prec )
     return relu_res, a, b
 
-def compute_dense_lyr( img, var_dict, lyr_name, dense_prec = 3 ):
+def compute_dense_lyr( img, var_dict, lyr_name, dense_prec = 3, ab_prec = 5 ):
     img = round_to( img, dense_prec )
     img_flat = img.flatten()
     mat, scaling_factor = get_ternary( var_dict[lyr_name] )
@@ -138,9 +141,9 @@ def compute_dense_lyr( img, var_dict, lyr_name, dense_prec = 3 ):
     if bias_name in var_dict:
         bias = round_to( var_dict[bias_name], dense_prec )
     if lyr_name + '/mean'in var_dict: # apply batch norm
-        a, b = get_AB( lyr_name, var_dict, scaling_factor, bias, 5 )
+        a, b = get_AB( lyr_name, var_dict, scaling_factor, bias, ab_prec )
     else:
-        a = round_to( scaling_factor, 5 )
+        a = round_to( scaling_factor, ab_prec )
         b = bias
     b = round_to( b, dense_prec )
     matmul_res = round_to( img_flat.dot( mat ), dense_prec )
@@ -154,34 +157,34 @@ def get_image( fname ):
     adj_stddev = max( stddev, np.sqrt( 1 / ( 32 * 32 * 3 ) ) )
     return (img - nu)/adj_stddev
 
-def inference( img, var_dict, filename = None ):
-    img = round_to( img, 3 )
+def inference( img, var_dict, filename = None, conv_prec = 3, ab_prec = 5 ):
+    img = round_to( img, conv_prec )
     if filename is not None:
         write_to_file( img, filename + ".csv", no_dims = 3 )
     for i in range( 2 ):
-        img, a, b = compute_conv_lyr( img, var_dict, i + 1, 3 )
+        img, a, b = compute_conv_lyr( img, var_dict, i + 1, conv_prec, ab_prec )
     img = compute_max_pool( img )
     if filename is not None:
         write_to_file( img, filename + "_mp_1.csv", no_dims = 3 )
     for i in range( 2 ):
-        img, a, b = compute_conv_lyr( img, var_dict, i + 3, 3 )
+        img, a, b = compute_conv_lyr( img, var_dict, i + 3, conv_prec, ab_prec )
     img = compute_max_pool( img )
     if filename is not None:
         write_to_file( img, filename + "_mp_2.csv", no_dims = 3 )
     for i in range( 2 ):
-        img, a, b = compute_conv_lyr( img, var_dict, i + 5, 3 )
+        img, a, b = compute_conv_lyr( img, var_dict, i + 5, conv_prec, ab_prec )
     img = compute_max_pool( img )
     if filename is not None:
         write_to_file( img, filename + "_mp_3.csv", no_dims = 3 )
-    img, a, b = compute_dense_lyr( img, var_dict, "fc_1024", 3 )
+    img, a, b = compute_dense_lyr( img, var_dict, "fc_1024", conv_prec, ab_prec )
     img = compute_relu( img )
-    pred, a, b = compute_dense_lyr( img, var_dict, "softmax", 3 )
+    pred, a, b = compute_dense_lyr( img, var_dict, "softmax", conv_prec, ab_prec )
     return pred
 
 def max_pred( pred, labels ):
     return labels[ np.argmax( pred ) ]
 
-def write_network( var_dict ):
+def write_network( var_dict, ab_prec = 5 ):
     for i in range( 6 ):
         conv_str = "conv" + str( i + 1 )
         conv, scaling_factor = get_ternary( var_dict[conv_str] )
@@ -191,15 +194,20 @@ def write_network( var_dict ):
           var_dict,
           scaling_factor,
           0,
-          5
+          ab_prec
         )
         write_to_file( ab, "../resources/" + conv_str + "_ab.csv", no_dims = 2 )
+
+def parallel_inference( i, results, label_imgs, var_dict, conv_prec, ab_prec ):
+  for j, label_img in enumerate(label_imgs):
+    pred = inference( label_img[1], var_dict, conv_prec = conv_prec, ab_prec = ab_prec )
+    results[i + j] = [ label_img[0], np.argmax(pred) ]
 
 if __name__ == "__main__":
     model_name = sys.argv[1]
     img_names = sys.argv[2:]
-    output_file = open( "image_predictions.cnn", "w" )
-    wrt = csv.writer( output_file )
+    conv_prec = 4
+    ab_prec = 6
     if os.path.exists( model_name + "_dict.pkl" ):
         f = open( model_name + "_dict.pkl", "rb" )
         var_dict = pickle.load( f )
@@ -219,9 +227,26 @@ if __name__ == "__main__":
                "ship",
                "truck" ]
     write_network( var_dict )
-    for img_name in img_names:
-        img = get_image( img_name )
-        wrt.writerow( img )
-        pred = inference( img, var_dict, img_name.split('.png')[0] )
-        print( img_name + " is " + max_pred( pred, labels ) )
-    output_file.close()
+    if len(img_names) > 0:
+      for img_name in img_names:
+          img = get_image( img_name )
+          pred = inference( img, var_dict, img_name.split('.png')[0], conv_prec, ab_prec )
+          print( img_name + " is " + max_pred( pred, labels ) )
+    else:
+      manager = Manager()
+      results = manager.dict()
+      img_iter = ImageIter()
+      steps = img_iter.__len__()
+      step_size = int(steps/63)
+      idxs = list(range( 0, steps, step_size )) + [ steps ]
+      label_imgs = [ x for x in ImageIter() ]
+      ijs = [ [ idxs[i], [ idxs[i], idxs[i+1] ] ] for i in range( len(idxs ) - 1 ) ]
+      procs = [ Process( target = parallel_inference,
+                         args = ( i, results, label_imgs[ij[0]:ij[1]], var_dict, conv_prec, ab_prec ) )
+                            for i, ij in ijs ]
+      for p in procs:
+        p.start()
+      for p in procs:
+        p.join()
+      accr = sum( [ results[i][0] == results[i][1] for i in range( steps ) ] )*100.0/steps
+      print( "accr = " + str(accr) + "% when conv_prec = " + str(conv_prec) + " ab_prec = " + str(ab_prec) )
