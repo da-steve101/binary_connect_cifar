@@ -24,13 +24,6 @@ private class Vgg7( dtype : SInt ) extends Module {
 
 }
 
-class DenseLayer( dtype : SInt, tPut : Int, weights : Seq[Seq[Int]] ) extends Module {
-  val io = IO( new Bundle {
-    val dataIn = Flipped( Decoupled( Vec( tPut, dtype ) ) )
-    val dataOut = Decoupled( Vec( weights.size, dtype ) )
-  })
-}
-
 class AWSVggWrapper extends Module {
 
   val dtype = SInt( 16.W )
