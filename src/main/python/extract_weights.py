@@ -62,16 +62,19 @@ def write_to_file( inputs, fname, no_dims = 4, additional_info = None ):
   wrt = csv.writer( f_out )
   if additional_info is not None:
     wrt.writerow( additional_info )
-  for a in inputs:
-    if no_dims >= 3:
-        for b in a:
-            if no_dims == 4:
-                for c in b:
-                    tmp = wrt.writerow( c )
-            else:
-                tmp = wrt.writerow( b )
-    else:
-        tmp = wrt.writerow( a )
+  if no_dims >= 2:
+    for a in inputs:
+      if no_dims >= 3:
+          for b in a:
+              if no_dims == 4:
+                  for c in b:
+                      tmp = wrt.writerow( c )
+              else:
+                  tmp = wrt.writerow( b )
+      else:
+          tmp = wrt.writerow( a )
+  else:
+    tmp = wrt.writerow( inputs )
   f_out.close()
 
 def compute_conv( img, conv_weights ):

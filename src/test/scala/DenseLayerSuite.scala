@@ -11,7 +11,9 @@ import scala.collection.mutable.ArrayBuffer
 
 class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
   val myRand = new Random
-  val cycs = 500
+  val cycs = 5000
+
+  println( "c.noOut = " + c.noOut )
 
   // val bufferedSource_img = scala.io.Source.fromFile("src/main/resources/airplane4_mp_3.csv")
   // val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_fc_1024_preBN.csv")
@@ -19,25 +21,26 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
   val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_softmax_preBN.csv")
 
   val img_raw = bufferedSource_img.getLines.toList
+
   /*
   val img = img_raw.map( _.split(",").toList.map( x => {
     BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
   }) ).grouped( 4 ).toList
    */
   val img = img_raw.head.split( "," ).toList.map( x => {
-    BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
+    BigInt(math.round( x.toFloat * ( 1 << c.fracBits ) ).toInt)
   })
 
   val dense_raw = bufferedSource_out.getLines.toList.head
   val dense_res = dense_raw.split(",").toList.map( x => {
-    BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
+    BigInt(math.round( x.toFloat * ( 1 << c.fracBits ) ).toInt)
   })
 
   var imgRow = 0
   var imgCol = 0
   var imgIdx = 0
   for ( cyc <- 0 until cycs ) {
-    val vld = true // myRand.nextInt(4) != 0
+    val vld = myRand.nextInt(4) != 0
     poke( c.io.dataOut.ready, true )
     poke( c.io.dataIn.valid, vld )
     for ( i <- 0 until c.tPut ) {
@@ -46,6 +49,7 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
       imgIdx += 1
     }
     if ( vld ) {
+      // if ( imgIdx >= ( c.noIn / ( c.imgSize * c.imgSize ) ) - 1 ) {
       if ( imgIdx >= c.noIn ) {
         imgCol += 1
         imgIdx = 0
@@ -60,18 +64,28 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
     step( 1 )
     expect( c.io.dataIn.ready, true )
     val vldOut = peek( c.io.dataOut.valid ) == 1
-    if ( vldOut ) {
-      for ( j <- 0 until c.noOut )
+    peek( c.io.cumSumOut )
+    peek( c.io.sumOut )
+    for ( j <- 0 until c.noOut ) {
+      if ( vldOut )
         expect( c.io.dataOut.bits( j ), dense_res( j ) )
+      else
+        peek( c.io.dataOut.bits( j ) )
     }
   }
 }
 
 class DenseLayerSuite extends ChiselFlatSpec {
 
-  val bufferedSource_weights = scala.io.Source.fromFile("src/main/resources/softmax_weights.csv")
-  val weights_raw = bufferedSource_weights.getLines.toList.tail
-  val weights = weights_raw.map( _.split(",").toList.map( x => x.toInt ).toList ).transpose
+  val bufferedSource_weights_sm = scala.io.Source.fromFile("src/main/resources/softmax_weights.csv")
+  val weights_raw_sm = bufferedSource_weights_sm.getLines.toList
+  val weights_sm = weights_raw_sm.map( _.split(",").toList.map( x => x.toInt ).toList ).transpose
+
+  val bufferedSource_weights_fc = scala.io.Source.fromFile("src/main/resources/fc_1024_weights.csv")
+  val weights_raw_fc = bufferedSource_weights_fc.getLines.toList
+  val weights_fc = weights_raw_fc.map( _.split(",").toList.map( x => x.toInt ).toList ).transpose
+
+  val weights = weights_sm
 
   println( "weights.size = " + weights.size )
   println( "weights.head.size = " + weights.head.size )

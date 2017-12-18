@@ -13,6 +13,8 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
   val io = IO( new Bundle {
     val dataIn = Flipped( Decoupled( Vec( tPut, dtype ) ) )
     val dataOut = Decoupled( Vec( noOut, dtype ) )
+    val cumSumOut = Output( dtype.cloneType )
+    val sumOut = Output( dtype.cloneType )
   })
 
   // store the weights in a RAM
@@ -98,8 +100,15 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
   val cummulativeSums = Reg( Vec( noOut, dtype.cloneType ) )
 
   // one less than delay so resets the cyc before ...
-  val rst = ShiftRegister( cntr === 0.U, sumLatency )
+  val rst = ShiftRegister( cntr === 0.U, sumLatency + 1 )
+  val done = RegInit( false.B )
+  when ( cntr  === ((noIn/tPut) - 1).U ) {
+    done := true.B
+  }
   val vld = ShiftRegister( io.dataIn.valid && io.dataOut.ready, sumLatency )
+
+  io.cumSumOut := cummulativeSums(3)
+  io.sumOut := summations(3)._1
 
   for ( s <- summations.map( _._1 ).zipWithIndex ) {
     when ( vld ) {
@@ -112,9 +121,10 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
 
   val output_nums = Reg( Vec( noOut, dtype ) )
   val out_vld_reg = RegInit( false.B )
-  when ( io.dataIn.valid ) {
+  when ( rst && done ) {
     output_nums := cummulativeSums
     out_vld_reg := true.B
+    done := false.B
   }
   when ( out_vld_reg && io.dataOut.ready ) {
     out_vld_reg := false.B
