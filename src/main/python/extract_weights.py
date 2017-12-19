@@ -43,11 +43,11 @@ def get_variables( model_name ):
             var_dict[bn_name] = sess.run( x )
     return var_dict
 
-def round_to( x, bits_prec = 5 ):
+def round_to( x, bits_prec ):
     factor = 1 << bits_prec
     return np.round( x * factor )/factor
 
-def floor_to( x, bits_prec = 5 ):
+def floor_to( x, bits_prec ):
     factor = 1 << bits_prec
     return np.floor( x * factor )/factor
 
@@ -115,10 +115,10 @@ def compute_max_pool( img ):
 def linear_shift( img, a, b, prec ):
     return floor_to( a * img + b, prec )
 
-def compute_conv_lyr( img, var_dict, idx, conv_prec = 5, ab_prec = 5 ):
+def compute_conv_lyr( img, var_dict, idx, conv_prec, ab_prec ):
     lyr = "conv" + str(idx)
     conv_weights = var_dict[lyr]
-    img = round_to( img, conv_prec )
+    img = floor_to( img, conv_prec )
     conv_res, scaling_factor = compute_conv( img, conv_weights )
     # print_info( "conv" + str(idx), conv_res )
     a, b = get_AB(
@@ -135,8 +135,8 @@ def compute_conv_lyr( img, var_dict, idx, conv_prec = 5, ab_prec = 5 ):
     relu_res = floor_to( relu_res, conv_prec )
     return relu_res, a, b
 
-def compute_dense_lyr( img, var_dict, lyr_name, dense_prec = 3, ab_prec = 5 ):
-    img = round_to( img, dense_prec )
+def compute_dense_lyr( img, var_dict, lyr_name, dense_prec, ab_prec ):
+    img = floor_to( img, dense_prec )
     img_flat = img.flatten()
     mat, scaling_factor = get_ternary( var_dict[lyr_name] )
     bias = 0
@@ -148,8 +148,8 @@ def compute_dense_lyr( img, var_dict, lyr_name, dense_prec = 3, ab_prec = 5 ):
     else:
         a = round_to( scaling_factor, ab_prec )
         b = bias
-    b = round_to( b, dense_prec )
-    matmul_res = round_to( img_flat.dot( mat ), dense_prec )
+        b = round_to( b, ab_prec )
+    matmul_res = floor_to( img_flat.dot( mat ), dense_prec )
     return linear_shift( matmul_res, a, b, dense_prec ), a, b
 
 def get_image( fname ):
@@ -160,7 +160,7 @@ def get_image( fname ):
     adj_stddev = max( stddev, np.sqrt( 1 / ( 32 * 32 * 3 ) ) )
     return (img - nu)/adj_stddev
 
-def inference( img, var_dict, filename = None, conv_prec = 3, ab_prec = 5 ):
+def inference( img, var_dict, conv_prec, ab_prec, filename = None ):
     img = round_to( img, conv_prec )
     if filename is not None:
         write_to_file( img, filename + ".csv", no_dims = 3 )
@@ -191,7 +191,7 @@ def inference( img, var_dict, filename = None, conv_prec = 3, ab_prec = 5 ):
 def max_pred( pred, labels ):
     return labels[ np.argmax( pred ) ]
 
-def write_network( var_dict, ab_prec = 5 ):
+def write_network( var_dict, ab_prec ):
     for i in range( 6 ):
         conv_str = "conv" + str( i + 1 )
         conv, scaling_factor = get_ternary( var_dict[conv_str] )
@@ -207,7 +207,7 @@ def write_network( var_dict, ab_prec = 5 ):
 
 def parallel_inference( i, results, label_imgs, var_dict, conv_prec, ab_prec ):
   for j, label_img in enumerate(label_imgs):
-    pred = inference( label_img[1], var_dict, conv_prec = conv_prec, ab_prec = ab_prec )
+    pred = inference( label_img[1], var_dict, conv_prec, ab_prec )
     results[i + j] = [ label_img[0], np.argmax(pred) ]
 
 if __name__ == "__main__":
@@ -237,7 +237,7 @@ if __name__ == "__main__":
     if len(img_names) > 0:
       for img_name in img_names:
           img = get_image( img_name )
-          pred = inference( img, var_dict, img_name.split('.png')[0], conv_prec, ab_prec )
+          pred = inference( img, var_dict, conv_prec, ab_prec, img_name.split('.png')[0] )
           print( img_name + " is " + max_pred( pred, labels ) )
     else:
       manager = Manager()

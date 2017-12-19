@@ -55,7 +55,11 @@ class MuxLayerSuite extends ChiselFlatSpec {
   behavior of "MuxLayer"
   backends foreach {backend =>
     it should s"correctly compute the mux $backend" in {
-      for ( sizes <- List[(Int, Int)]( /*( 256, 4 ),*/ ( 1024, 1 ) ) ) {
+      for ( sizes <- List[(Int, Int)](
+        ( 128, 8 )
+        /*( 256, 4 )*/
+        /*( 1024, 1 )*/
+      ) ) {
         val inSize = sizes._1
         val outSize = sizes._2
         Driver(() => {

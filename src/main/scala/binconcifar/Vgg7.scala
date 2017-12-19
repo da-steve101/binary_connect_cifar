@@ -47,7 +47,7 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
 
     val bufferedSource_ab = scala.io.Source.fromFile("src/main/resources/conv" + idx + "_ab.csv")
     val ab_raw = bufferedSource_ab.getLines.toList
-    val ab = ab_raw.map( _.split(",").toList.map( x => ( x.toFloat * ( 1 << abFracBits ) ).toInt ) )
+    val ab = ab_raw.map( _.split(",").toList.map( x => math.round( x.toFloat * ( 1 << abFracBits ) ).toInt ) )
 
     val tPutInt = math.max( tPutLyr, 1 ).toInt
     val blMod = Module( new SimpleBufferLayer( dtype, imgSize, outFormat._3, outFormat, 10, 1, true, tPutInt ) )

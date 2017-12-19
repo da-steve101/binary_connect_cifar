@@ -15,9 +15,9 @@ class AWSVggWrapperTests( c : AWSVggWrapper ) extends PeekPokeTester( c ) {
 
   for ( i <- 0 until 1024 ) {
     step(1)
-    val dataOut = ( 0 until 4 ).map( j => peek( c.io.dataOut.bits(j) ) ).toList
+    for ( bitsOut <- c.io.dataOut.bits )
+      peek( bitsOut )
     val vld = peek( c.io.dataOut.valid )
-    println( "dataOut(" + vld + ") = " + dataOut )
   }
 }
 
