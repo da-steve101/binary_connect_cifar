@@ -233,7 +233,7 @@ if __name__ == "__main__":
                "horse",
                "ship",
                "truck" ]
-    write_network( var_dict )
+    write_network( var_dict, ab_prec )
     if len(img_names) > 0:
       for img_name in img_names:
           img = get_image( img_name )
