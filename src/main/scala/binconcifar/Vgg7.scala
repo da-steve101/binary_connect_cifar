@@ -15,8 +15,8 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
   val imgOutSize = imgSize / 2
   // val dtype = SInt( 16.W )
   // type T = dtype.type
-  val fracBits = 3
-  val abFracBits = 5
+  val fracBits = 4
+  val abFracBits = 6
   val inGrp = 3
   val noOut = 64
   val latency = 32 // just some bs for now
