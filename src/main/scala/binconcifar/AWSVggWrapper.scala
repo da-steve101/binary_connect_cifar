@@ -12,7 +12,7 @@ private class Vgg7( dtype : SInt ) extends Module {
    */
   val io = IO(new Bundle {
     val dataIn = Flipped(Decoupled( Vec( 3, dtype ) ))
-    val dataOut = Decoupled( Vec( 64, dtype ) )
+    val dataOut = Decoupled( Vec( 256, dtype ) )
   })
 
   val vld = RegInit( false.B )
@@ -30,7 +30,7 @@ class AWSVggWrapper extends Module {
 
   val io = IO( new Bundle {
     val dataIn = Flipped(Decoupled( Vec( 3, dtype ) ))
-    val dataOut = Decoupled( Vec( 16, dtype ) )
+    val dataOut = Decoupled( Vec( 4, dtype ) )
   })
 
   // pass IO to blank Vgg7
@@ -39,13 +39,9 @@ class AWSVggWrapper extends Module {
 
   // Need to pipeline the mux
 
-  val muxLyr = Module( new MuxLayer( dtype, 64, 16 ) )
-  printf( "vgg.io.dataOut.bits = \n" )
-  for ( d <- vgg.io.dataOut.bits )
-    printf( "%d, ", d )
-  printf( "\n" )
-  printf( "io.dataIn.valid = %d\n", io.dataIn.valid )
-  printf( "vgg.io.dataOut.valid = %d\n", vgg.io.dataOut.valid )
-  muxLyr.io.dataIn <> vgg.io.dataOut
+  val dataQ = Queue( vgg.io.dataOut, 4 )
+
+  val muxLyr = Module( new MuxLayer( dtype, 256, 4 ) )
+  muxLyr.io.dataIn <> dataQ
   muxLyr.io.dataOut <> io.dataOut
 }

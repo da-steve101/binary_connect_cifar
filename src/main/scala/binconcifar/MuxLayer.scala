@@ -11,7 +11,7 @@ class MuxLayer( dtype : SInt, val inSize : Int, val outSize : Int ) extends Modu
     val dataOut = Decoupled( Vec( outSize, dtype ) )
   })
 
-  io.dataIn.ready := io.dataOut.ready
+  val rdyReg = RegInit( true.B )
   val noGrps = inSize / outSize
   val grpsBits = log2Ceil( noGrps )
   val cntr = RegInit( 0.U( grpsBits.W ) )
@@ -25,6 +25,12 @@ class MuxLayer( dtype : SInt, val inSize : Int, val outSize : Int ) extends Modu
       for ( j <- 0 until outSize )
         data( i )( j ) := io.dataIn.bits( i*outSize + j )
     }
+  }
+  when ( cntr === (noGrps - 1).U ) {
+    rdyReg := true.B
+  }
+  when ( io.dataIn.valid && rdyReg ) {
+    rdyReg := false.B
   }
 
   val bitsPerCycle = 2
@@ -60,4 +66,5 @@ class MuxLayer( dtype : SInt, val inSize : Int, val outSize : Int ) extends Modu
   val lastVld = RegInit( false.B ) // add one more cycle of valid
   lastVld := vld
   io.dataOut.valid := vld | lastVld
+  io.dataIn.ready := rdyReg
 }
