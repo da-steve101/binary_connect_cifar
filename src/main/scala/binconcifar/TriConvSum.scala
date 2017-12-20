@@ -233,11 +233,14 @@ class TriConvSum (
     io.dataIn.ready := ( rdyCnt === (( 1 << log2Iter) - 1).U || ( !io.dataIn.valid && rdyCnt === 0.U ) ) && io.dataOut.ready
   }
 
-  val dataVec = inIOToVVV( weights(0)(0).size, weights(0)(0)(0).size )
+  val noDelayReg = 1
+  val startReg = ShiftRegister( io.dataIn.valid && rdyCnt === 0.U, noDelayReg )
+
+  val dataVec = ShiftRegister( inIOToVVV( weights(0)(0).size, weights(0)(0)(0).size ), noDelayReg )
   val convRes = ( 0 until tPutRounded ).map( idx => {
     if ( bitWidth < inWidth ) {
       val pConv = Module( new SerialTriConvSum( dtype, weights, bitWidth ) )
-      pConv.io.start := ( io.dataIn.valid && rdyCnt === 0.U )
+      pConv.io.start := startReg
       pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
         dataVec( wIdx + weights(0).size * idx )
       }))
@@ -251,10 +254,10 @@ class TriConvSum (
     }
   })
 
-  val latency = convRes.map( _._2 ).max
+  val latency = convRes.map( _._2 ).max + noDelayReg
 
   val convOut = convRes.map( o => {
-    ShiftRegister( o._1, latency - o._2 )
+    ShiftRegister( o._1, latency - noDelayReg - o._2 )
   }).reduce( (a, b) => Vec( a ++ b ) )
 
   val convValid = ShiftRegister( io.dataIn.valid, latency, false.B, true.B )
