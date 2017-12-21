@@ -34,7 +34,7 @@ class AWSVggWrapper extends Module {
 
   val io = IO( new Bundle {
     val dataIn = Flipped(Decoupled( Vec( 3, dtype ) ))
-    val dataOut = Decoupled( Vec( 1, dtype ) )
+    val dataOut = Decoupled( Vec( 10, dtype ) )
   })
 
   // pass IO to blank Vgg7
