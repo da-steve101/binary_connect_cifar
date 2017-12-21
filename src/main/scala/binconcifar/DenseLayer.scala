@@ -18,7 +18,7 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
   // store the weights in a RAM
   val weightsWidth = tPut * 2
   val weightType = UInt( weightsWidth.W )
-  val weightsRAM = Reg( Vec( noOut, Vec( noIn / tPut, weightType ) ) )
+  val weightsRAM = Wire( Vec( noOut, Vec( noIn / tPut, weightType ) ) )
 
   for ( nums <- weights.zipWithIndex ) {
     for( grp <- nums._1.grouped( tPut ).zipWithIndex ) {
