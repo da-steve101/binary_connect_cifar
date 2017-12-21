@@ -64,8 +64,6 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
     step( 1 )
     expect( c.io.dataIn.ready, true )
     val vldOut = peek( c.io.dataOut.valid ) == 1
-    peek( c.io.cumSumOut )
-    peek( c.io.sumOut )
     for ( j <- 0 until c.noOut ) {
       if ( vldOut )
         expect( c.io.dataOut.bits( j ), dense_res( j ) )
