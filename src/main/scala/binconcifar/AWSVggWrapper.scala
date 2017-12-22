@@ -34,7 +34,7 @@ class AWSVggWrapper extends Module {
 
   val io = IO( new Bundle {
     val dataIn = Flipped(Decoupled( Vec( 3, dtype ) ))
-    val dataOut = Decoupled( Vec( 10, dtype ) )
+    val dataOut = Decoupled( Vec( 1, dtype ) )
   })
 
   // pass IO to blank Vgg7
@@ -73,6 +73,21 @@ class AWSVggWrapper extends Module {
   val dense_2 = Module( new DenseLayer( dtype, 1, weights_sm ) )
   dense_2.io.dataIn <> scale.io.dataOut
 
+  dense_2.io.dataOut.ready := true.B // just set as true as should always be ready ...
+  val outputRegs = Reg( dense_2.io.dataOut.bits.cloneType )
+  val outCntr = RegInit( 0.U( 4.W ) )
+  io.dataOut.valid := false.B
+  when ( dense_2.io.dataOut.valid ) {
+    outputRegs := dense_2.io.dataOut.bits
+    outCntr := 1.U
+  }
+  when ( outCntr > 0.U && io.dataOut.ready ) {
+    outCntr := outCntr + 1.U
+    io.dataOut.valid := true.B
+  }
+  when ( outCntr >= 10.U && io.dataOut.ready ) {
+    outCntr := 0.U
+  }
+  io.dataOut.bits(0) := outputRegs( outCntr - 1.U ) // NB: no need to mult scaling factor into softmax
   // muxLyr_2.io.dataOut <> io.dataOut
-  dense_2.io.dataOut <> io.dataOut
 }
