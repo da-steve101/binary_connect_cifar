@@ -204,6 +204,18 @@ def write_network( var_dict, ab_prec ):
           ab_prec
         )
         write_to_file( ab, "../resources/" + conv_str + "_ab.csv", no_dims = 2 )
+    mat, scaling_factor = get_ternary( var_dict["fc_1024"] )
+    write_to_file( mat.tolist(), "../resources/fc_1024_weights.csv", no_dims = 2 )
+    ab = get_AB(
+        "fc_1024",
+        var_dict,
+        scaling_factor,
+        0,
+        ab_prec
+    )
+    write_to_file( ab, "../resources/fc_1024_ab.csv", no_dims = 2 )
+    mat, scaling_factor = get_ternary( var_dict["softmax"] )
+    write_to_file( mat.tolist(), "../resources/softmax_weights.csv", no_dims = 2 )
 
 def parallel_inference( i, results, label_imgs, var_dict, conv_prec, ab_prec ):
   for j, label_img in enumerate(label_imgs):
