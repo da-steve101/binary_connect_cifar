@@ -90,15 +90,11 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
     computeMACs( w, delayActs )
   } ).toList
 
-  val tmpAct = RegNext( delayActs(0) )
-  val tmpWeight = RegNext( delayWeights(0) )
-
   val sumLatency = summations.head._2 + 3
 
   val cummulativeSums = Reg( Vec( noOut, dtype.cloneType ) )
-
   // one less than delay so resets the cyc before ...
-  val rst = ShiftRegister( cntr === 0.U, sumLatency + 1 )
+  val rst = ShiftRegister( cntr === 0.U, sumLatency - 1 )
   val done = RegInit( false.B )
   when ( cntr  === ((noIn/tPut) - 1).U ) {
     done := true.B

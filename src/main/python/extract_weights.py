@@ -150,6 +150,7 @@ def compute_dense_lyr( img, var_dict, lyr_name, dense_prec, ab_prec ):
         b = bias
         b = round_to( b, ab_prec )
     matmul_res = floor_to( img_flat.dot( mat ), dense_prec )
+    write_to_file( matmul_res, "../resources/airplane4_" + lyr_name + "_preBN.csv", no_dims = 1 )
     return linear_shift( matmul_res, a, b, dense_prec ), a, b
 
 def get_image( fname ):
@@ -180,9 +181,9 @@ def inference( img, var_dict, conv_prec, ab_prec, filename = None ):
     if filename is not None:
         write_to_file( img, filename + "_mp_3.csv", no_dims = 3 )
     img, a, b = compute_dense_lyr( img, var_dict, "fc_1024", conv_prec, ab_prec )
+    img = compute_relu( img )
     if filename is not None:
         write_to_file( img, filename + "_fc1024.csv", no_dims = 1 )
-    img = compute_relu( img )
     pred, a, b = compute_dense_lyr( img, var_dict, "softmax", conv_prec, ab_prec )
     if filename is not None:
         write_to_file( img, filename + "_sm10.csv", no_dims = 1 )
