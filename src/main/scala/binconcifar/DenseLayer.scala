@@ -26,11 +26,11 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
         if ( x == 1 )
           1
         else if ( x == -1 )
-          3
+          2
         else
           0
       }).zipWithIndex.map( xi => {
-        xi._1 << xi._2
+        xi._1 << 2 * xi._2
       }).sum
       val weightsVec = weights_val.U( weightsWidth.W )
       weightsRAM( nums._2 )( grp._2 ) := weightsVec
