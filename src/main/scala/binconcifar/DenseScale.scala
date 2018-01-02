@@ -7,8 +7,8 @@ class DenseScale(
   dtype : SInt,
   a : Seq[Int],
   b : Seq[Int],
-  convPrec : Int,
-  fracPrec : Int
+  val convPrec : Int,
+  val fracPrec : Int
 ) extends Module {
 
   val io = IO( new Bundle {
@@ -50,7 +50,7 @@ class DenseScale(
     relu := output
   }
 
-  val latency = 3
+  val latency = 4
 
   io.dataOut.bits(0) := relu
   io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency, false.B, true.B )

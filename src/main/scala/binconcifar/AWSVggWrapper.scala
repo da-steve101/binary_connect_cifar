@@ -57,6 +57,7 @@ class AWSVggWrapper extends Module {
 
   val muxLyr_2 = Module( new MuxLayer( dtype, 1024, 1 ) )
   muxLyr_2.io.dataIn <> dense.io.dataOut
+  dense.io.dataOut.ready := true.B // should always be ready ...
 
   // need a BN scale and shift then relu
   val bufferedSource_ab = scala.io.Source.fromFile("src/main/resources/fc_1024_ab.csv")
