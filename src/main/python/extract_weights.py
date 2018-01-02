@@ -57,6 +57,11 @@ def get_ternary( x ):
     tri_weights = np.round(x/scaling_factor).astype( int )
     return tri_weights, scaling_factor
 
+def float_to_str( x ):
+  if isinstance( x[0], int ):
+    return x
+  return [ "{:.6f}".format( y ) for y in x ]
+
 def write_to_file( inputs, fname, no_dims = 4, additional_info = None ):
   f_out = open( fname, "w" )
   wrt = csv.writer( f_out )
@@ -68,13 +73,13 @@ def write_to_file( inputs, fname, no_dims = 4, additional_info = None ):
           for b in a:
               if no_dims == 4:
                   for c in b:
-                      tmp = wrt.writerow( c )
+                      tmp = wrt.writerow( float_to_str( c ) )
               else:
-                  tmp = wrt.writerow( b )
+                  tmp = wrt.writerow( float_to_str( b ) )
       else:
-          tmp = wrt.writerow( a )
+          tmp = wrt.writerow( float_to_str( a ) )
   else:
-    tmp = wrt.writerow( inputs )
+    tmp = wrt.writerow( float_to_str( inputs ) )
   f_out.close()
 
 def compute_conv( img, conv_weights ):
@@ -142,7 +147,7 @@ def compute_dense_lyr( img, var_dict, lyr_name, dense_prec, ab_prec ):
     bias = 0
     bias_name = lyr_name + "/bias"
     if bias_name in var_dict:
-        bias = round_to( var_dict[bias_name], dense_prec )
+        bias = var_dict[bias_name]
     if lyr_name + '/mean'in var_dict: # apply batch norm
         a, b = get_AB( lyr_name, var_dict, scaling_factor, bias, ab_prec )
     else:
@@ -150,7 +155,6 @@ def compute_dense_lyr( img, var_dict, lyr_name, dense_prec, ab_prec ):
         b = bias
         b = round_to( b, ab_prec )
     matmul_res = floor_to( img_flat.dot( mat ), dense_prec )
-    write_to_file( matmul_res, "../resources/airplane4_" + lyr_name + "_preBN.csv", no_dims = 1 )
     return linear_shift( matmul_res, a, b, dense_prec ), a, b
 
 def get_image( fname ):
@@ -186,7 +190,7 @@ def inference( img, var_dict, conv_prec, ab_prec, filename = None ):
         write_to_file( img, filename + "_fc1024.csv", no_dims = 1 )
     pred, a, b = compute_dense_lyr( img, var_dict, "softmax", conv_prec, ab_prec )
     if filename is not None:
-        write_to_file( img, filename + "_sm10.csv", no_dims = 1 )
+        write_to_file( pred, filename + "_sm10.csv", no_dims = 1 )
     return pred
 
 def max_pred( pred, labels ):
@@ -207,11 +211,12 @@ def write_network( var_dict, ab_prec ):
         write_to_file( ab, "../resources/" + conv_str + "_ab.csv", no_dims = 2 )
     mat, scaling_factor = get_ternary( var_dict["fc_1024"] )
     write_to_file( mat.tolist(), "../resources/fc_1024_weights.csv", no_dims = 2 )
+    bias = var_dict["fc_1024/bias"]
     ab = get_AB(
         "fc_1024",
         var_dict,
         scaling_factor,
-        0,
+        bias,
         ab_prec
     )
     write_to_file( ab, "../resources/fc_1024_ab.csv", no_dims = 2 )
