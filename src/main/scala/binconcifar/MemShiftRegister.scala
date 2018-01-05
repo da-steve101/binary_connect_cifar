@@ -52,7 +52,7 @@ object MemShiftRegister {
 
 /** Do not use this class directly, instead use [[chisel3.util.MemShiftRegister$]] Factory method
   */
-class MemShiftRegister[T <: Data]( genType : T, n : Int ) extends Module {
+class MemShiftRegister[T <: Data]( genType : T, val n : Int ) extends Module {
   val io = IO(new Bundle {
     val in = Input( genType.cloneType )
     val en = Input( Bool() )
@@ -60,10 +60,14 @@ class MemShiftRegister[T <: Data]( genType : T, n : Int ) extends Module {
     val out = Output( genType.cloneType )
   })
 
+  // if genType is a vec then aggregate bits to UInt
+  val grpedVec = io.in.asInstanceOf[Vec[SInt]]
+  val uintVec = grpedVec.map( _.asUInt() ).reduce( _ ## _ )
+
   if ( n <= 2 ) {
     io.out := ShiftRegister( io.in, n, io.en )
   } else {
-    val myMem = Mem( n, genType.cloneType )
+    val myMem = Mem( n, uintVec.cloneType )
 
     val cntr = Counter( io.en, n )
     val readAddr = Wire( UInt( cntr._1.getWidth.W + 1.W ) )
@@ -74,9 +78,14 @@ class MemShiftRegister[T <: Data]( genType : T, n : Int ) extends Module {
     }
 
     when ( io.en ) {
-      myMem( cntr._1 ) := io.in
+      myMem( cntr._1 ) := uintVec
     }
-    io.out := RegEnable( myMem( readAddr ), io.en )
+    val uintOut = RegEnable( myMem( readAddr ), io.en )
+    val sintOut = Wire( grpedVec.cloneType )
+    for ( i <- 0 until grpedVec.size ) {
+      sintOut( grpedVec.size - i - 1 ) := uintOut((i+1)*16 - 1, i*16).asSInt()
+    }
+    io.out := sintOut
     io.cntrWrap := cntr._2
   }
 }
