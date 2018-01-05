@@ -119,6 +119,11 @@ class SimpleBufferLayer[ T <: SInt](
   val lastCol = imgSize - 1
   val lastRow = vldCycPerRow - 1
 
+  val rowCntrFirst = rowCntr._1 === 0.U
+  val colCntrFirst = colCntr._1 === 0.U
+  val rowCntrLast = rowCntr._1 === lastRow.U
+  val colCntrLast = colCntr._1 === lastCol.U
+
   // need to do padding for window size = 3 and stride = 1
   if ( padding ) {
     val zeroGrp = Wire( Vec( grpSize, dtype.cloneType ) )
@@ -138,10 +143,10 @@ class SimpleBufferLayer[ T <: SInt](
           grpVec := convGrp._1
           if ( isTop || isBot || isLeft || isRight ) {
             val padConds : List[(Boolean, Bool)] = List(
-              ( isRight, rowCntr._1 === lastRow.U ), // pad right
-              ( isLeft, rowCntr._1 === 0.U ),        // pad left
-              ( isBot, colCntr._1 === 0.U ),         // pad bot
-              ( isTop, colCntr._1 === lastCol.U )    // pad top
+              ( isRight, rowCntrLast ), // pad right
+              ( isLeft, rowCntrFirst ), // pad left
+              ( isBot, colCntrFirst ),  // pad bot
+              ( isTop, colCntrLast )    // pad top
             )
             val padIt = padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ )
             when ( padIt ) {

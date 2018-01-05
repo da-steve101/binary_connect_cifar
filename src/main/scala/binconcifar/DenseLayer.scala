@@ -18,7 +18,7 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
   // store the weights in a RAM
   val weightsWidth = tPut * 2
   val weightType = UInt( weightsWidth.W )
-  val weightsRAM = Wire( Vec( noOut, Vec( noIn / tPut, weightType ) ) )
+  val weightsRAM = List.fill( noOut ) { Wire( Vec( noIn / tPut, weightType ) ) }
 
   for ( nums <- weights.zipWithIndex ) {
     for( grp <- nums._1.grouped( tPut ).zipWithIndex ) {
@@ -42,10 +42,12 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
     cntr := cntr + 1.U
   }
 
+  val cntr_delay = RegNext( cntr )
+
   // read tPut of them each cycle from the RAM
   val currWeights = Reg( Vec( weights.size, weightType ) )
   for ( i <- 0 until weights.size )
-    currWeights( i ) := weightsRAM( i )( cntr )
+    currWeights( i ) := weightsRAM( i )( cntr_delay )
 
   val currActs = RegNext( io.dataIn.bits )
 
@@ -83,7 +85,7 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
   }
 
   // add pipeline stages before fanout?
-  val delayWeights = ShiftRegister( currWeights, 2 )
+  val delayWeights = ShiftRegister( currWeights, 1 )
   val delayActs = ShiftRegister( currActs, 2 )
 
   val summations = delayWeights.map( w => {
