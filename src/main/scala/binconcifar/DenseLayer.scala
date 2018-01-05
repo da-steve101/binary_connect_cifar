@@ -93,11 +93,13 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
   val sumLatency = summations.head._2 + 3
 
   val cummulativeSums = Reg( Vec( noOut, dtype.cloneType ) )
-  // one less than delay so resets the cyc before ...
   val rst = ShiftRegister( cntr === 0.U, sumLatency )
   val done = RegInit( false.B )
   when ( cntr  === ((noIn/tPut) - 1).U ) {
     done := true.B
+  }
+  when ( rst & done ) {
+    done := false.B
   }
   val vld = ShiftRegister( io.dataIn.valid, sumLatency )
 
@@ -113,19 +115,8 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
     }
   }
 
-  val output_nums = Reg( Vec( noOut, dtype ) )
-  val out_vld_reg = RegInit( false.B )
-  when ( rst && done ) {
-    output_nums := cummulativeSums
-    out_vld_reg := true.B
-    done := false.B
-  }
-  when ( out_vld_reg && io.dataOut.ready ) {
-    out_vld_reg := false.B
-  }
-
   io.dataIn.ready := io.dataOut.ready
-  io.dataOut.valid := out_vld_reg
-  io.dataOut.bits := output_nums
+  io.dataOut.valid := rst & done
+  io.dataOut.bits := cummulativeSums
 
 }
