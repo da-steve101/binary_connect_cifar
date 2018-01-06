@@ -9,13 +9,13 @@ import scala.collection.mutable.ArrayBuffer
 
 class MemShiftRegisterTests( c : MemShiftRegister[Vec[SInt]] ) extends PeekPokeTester( c ) {
   val myRand = new Random
-  val cycs = 100
+  val cycs = 1000
 
   val tmpsr = ArrayBuffer[List[BigInt]]()
   for ( i <- 0 until cycs ) {
     tmpsr += List.fill( c.io.in.size ) {
       val x = myRand.nextInt( 1 << 16 )
-      if ( x > ( 1 << 15 ) )
+      if ( x >= ( 1 << 15 ) )
         BigInt( x - (1 << 16))
       else
         BigInt(x)
@@ -25,8 +25,6 @@ class MemShiftRegisterTests( c : MemShiftRegister[Vec[SInt]] ) extends PeekPokeT
   var inIdx = 0
   var outIdx = 0
   for ( cyc <- 0 until cycs ) {
-    println( "inIdx = " + inIdx )
-    println( "outIdx = " + outIdx )
     val vld = myRand.nextInt(4) != 0
     poke( c.io.en, vld )
     for ( i <- 0 until c.io.in.size ) {
@@ -53,7 +51,7 @@ class MemShiftRegisterSuite extends ChiselFlatSpec {
   backends foreach {backend =>
     it should s"correctly compute the memshiftregister $backend" in {
       Driver(() => {
-        new MemShiftRegister( Vec( 10, SInt( 16.W ).cloneType ), 16 )
+        new MemShiftRegister( Vec( 64, SInt( 16.W ).cloneType ), 32 )
       }, "verilator", true )( c => new MemShiftRegisterTests( c ) ) should be (true)
     }
   }
