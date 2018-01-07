@@ -40,28 +40,30 @@ class MemShiftRegister[T <: Data]( genType : T, val n : Int ) extends Module {
   if ( n <= 3 ) {
     io.out := ShiftRegister( io.in, n, io.en )
   } else {
-    val myMem = Mem( n - 1, uintVec.cloneType )
+    val myMem = Mem( n, uintVec.cloneType )
 
-    val cntr = Counter( io.en, n - 1 )
+    val cntr = Counter( io.en, n )
     val readAddr = Wire( UInt( cntr._1.getWidth.W + 1.W ) )
 
-    readAddr := cntr._1 + 1.U
-    when ( cntr._1 === ( n - 2 ).U ) {
-      readAddr := 0.U
+    readAddr := cntr._1
+    when ( io.en ) {
+      readAddr := cntr._1 + 1.U
+      when ( cntr._1 === ( n - 1 ).U ) {
+        readAddr := 0.U
+      }
     }
 
     when ( io.en ) {
       myMem( cntr._1 ) := uintVec
     }
 
-    // add an output reg without enable for block ram
-    val uintOut = RegNext( myMem( readAddr ) )
+    val uintOut = myMem( readAddr )
     val sintOut = Wire( grpedVec.cloneType )
     for ( i <- 0 until grpedVec.size )
       sintOut( grpedVec.size - i - 1 ) := uintOut((i+1)*16 - 1, i*16).asSInt()
 
-    val ennxt = RegNext( io.en )
-    val sintBuf = RegEnable( sintOut, ennxt )
+    // register without enable for output of BRAM
+    val sintBuf = RegNext( sintOut )
 
     io.out := sintBuf
   }

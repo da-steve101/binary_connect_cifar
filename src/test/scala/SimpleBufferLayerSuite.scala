@@ -65,14 +65,16 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
   var imgRow = 0
   var imgCol = 0
   println( "noConvs = " + noConvs )
+  poke( c.io.dataOut.ready, true )
   while ( convCount < noImgs * noConvs ) { //  TODO: continue to next img
-    val vld = ( peek( c.io.dataIn.ready ) == 1 ) && ( myRand.nextInt( 5 ) != 0 )
-    // println( "vld = " + vld )
-    poke( c.io.dataOut.ready, true )
-    poke( c.io.dataIn.valid, vld )
+    val vldRnd = myRand.nextInt( 5 ) != 0
+    val vld = ( peek( c.io.dataIn.ready ) == 1 ) &&  vldRnd
+    poke( c.io.dataIn.valid, vldRnd )
     for ( i <- 0 until c.noIn ) {
-      for ( j <- 0 until c.outFormat._3 )
+      for ( j <- 0 until c.outFormat._3 ) {
         poke( c.io.dataIn.bits( ( c.noIn - 1 - i ) * c.outFormat._3 + j ), img( imgRow )( imgCol )(j) )
+        // println( "in(" + vld + ") = " + img( imgRow )( imgCol )(j) )
+      }
       if ( vld ) {
         imgCol += 1
         if ( imgCol == c.imgSize ) {
