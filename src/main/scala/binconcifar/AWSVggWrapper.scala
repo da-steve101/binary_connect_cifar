@@ -37,13 +37,37 @@ class AWSVggWrapper extends Module {
     val dataOut = Decoupled( Vec( 1, dtype ) )
   })
 
+  // just add a reg on input as don't have IO
+  val bitsIn = RegNext( io.dataIn.bits )
+  val vldIn = RegNext( io.dataIn.valid )
+  val rdy = RegNext( io.dataOut.ready )
+
   // pass IO to blank Vgg7
   private val vgg = Module( new Vgg7( dtype ) )
-  vgg.io.dataIn <> io.dataIn
+  vgg.io.dataIn.bits := bitsIn
+  vgg.io.dataIn.valid := vldIn
+  io.dataIn.ready := RegNext( vgg.io.dataIn.ready )
 
   // Need to pipeline the mux
+  val dataInAsUInt = vgg.io.dataOut.bits.asInstanceOf[Vec[SInt]].map( _.asUInt() ).reduce( _ ## _ )
+  val queueIOIn = Wire( Decoupled( dataInAsUInt.cloneType ) )
+  queueIOIn.bits := dataInAsUInt
+  queueIOIn.valid := vgg.io.dataOut.valid
 
-  val dataQ = Queue( vgg.io.dataOut, 4 )
+  val queueIOOut = Queue( queueIOIn, 4 )
+  vgg.io.dataOut.ready := queueIOIn.ready
+
+  val inQueue = Wire( Decoupled( vgg.io.dataOut.bits.cloneType ) )
+  queueIOOut.ready := inQueue.ready
+  val sintOut = Wire( vgg.io.dataOut.bits.cloneType )
+  val dtypeWidth = dtype.getWidth
+  for ( i <- 0 until vgg.io.dataOut.bits.size )
+    sintOut( vgg.io.dataOut.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
+
+  inQueue.bits := sintOut
+  inQueue.valid := queueIOOut.valid
+
+  val dataQ = inQueue
 
   val muxLyr = Module( new MuxLayer( dtype, 256, 4 ) )
   muxLyr.io.dataIn <> dataQ
@@ -82,13 +106,13 @@ class AWSVggWrapper extends Module {
     outputRegs := dense_2.io.dataOut.bits
     outCntr := 1.U
   }
-  when ( outCntr > 0.U && io.dataOut.ready ) {
+  when ( outCntr > 0.U && rdy ) {
     outCntr := outCntr + 1.U
     io.dataOut.valid := true.B
   }
-  when ( outCntr >= 10.U && io.dataOut.ready ) {
+  when ( outCntr >= 10.U && rdy ) {
     outCntr := 0.U
   }
   io.dataOut.bits(0) := outputRegs( outCntr - 1.U ) // NB: no need to mult scaling factor into softmax
-  // muxLyr_2.io.dataOut <> io.dataOut
+  // muxLyr.io.dataOut <> io.dataOut
 }
