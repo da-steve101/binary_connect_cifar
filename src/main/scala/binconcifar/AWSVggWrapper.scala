@@ -63,7 +63,7 @@ class AWSVggWrapper extends Module {
     sintOut( vgg.io.dataOut.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
 
   val muxLyr = Module( new MuxLayer( dtype, 256, 4 ) )
-  muxLyr.io.dataIn.bits := sinOut
+  muxLyr.io.dataIn.bits := sintOut
   muxLyr.io.dataIn.valid := queueIOOut.valid
   queueIOOut.ready := muxLyr.io.dataIn.ready
 
