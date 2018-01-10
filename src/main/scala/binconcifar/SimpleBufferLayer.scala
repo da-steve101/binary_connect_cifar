@@ -35,6 +35,7 @@ class SimpleBufferLayer[ T <: SInt](
   Predef.assert( imgSize % stride == 0, "ImgSize must be divisible by stride" )
   Predef.assert( imgSize % tPut == 0, "ImgSize must be divisible by tPut" )
 
+  val ready = io.dataOut.ready
   val dataInAsUInt = io.dataIn.bits.asInstanceOf[Vec[SInt]].map( _.asUInt() ).reduce( _ ## _ )
   val queueIOIn = Wire( Decoupled( dataInAsUInt.cloneType ) )
   queueIOIn.bits := dataInAsUInt
@@ -43,18 +44,13 @@ class SimpleBufferLayer[ T <: SInt](
   val queueIOOut = Queue( queueIOIn, qSize )
   io.dataIn.ready := queueIOIn.ready
 
-  val inQueue = Wire( Decoupled( io.dataIn.bits.cloneType ) )
-  queueIOOut.ready := inQueue.ready
+  queueIOOut.ready := ready
   val sintOut = Wire( io.dataIn.bits.cloneType )
   val dtypeWidth = dtype.getWidth
   for ( i <- 0 until io.dataIn.bits.size )
     sintOut( io.dataIn.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
 
-  inQueue.bits := sintOut
-  inQueue.valid := queueIOOut.valid
-  val ready = io.dataOut.ready
-  val nextData = inQueue.valid & ready
-  inQueue.ready := ready
+  val nextData = queueIOOut.valid & ready
 
   // just hacky compatibility for now ...
   for ( v <- io.vldMask )
@@ -86,9 +82,9 @@ class SimpleBufferLayer[ T <: SInt](
     memBuffers.toList
   }
 
-  val queueVld = Wire( Valid( inQueue.bits.cloneType ) )
+  val queueVld = Wire( Valid( sintOut.cloneType ) )
   queueVld.valid := nextData
-  queueVld.bits := inQueue.bits
+  queueVld.bits := sintOut
   val memBuffers = getMemBuffers( queueVld, cycPerRow )
 
   def windowTheData(

@@ -57,20 +57,15 @@ class AWSVggWrapper extends Module {
   val queueIOOut = Queue( queueIOIn, 4 )
   vgg.io.dataOut.ready := queueIOIn.ready
 
-  val inQueue = Wire( Decoupled( vgg.io.dataOut.bits.cloneType ) )
-  queueIOOut.ready := inQueue.ready
   val sintOut = Wire( vgg.io.dataOut.bits.cloneType )
   val dtypeWidth = dtype.getWidth
   for ( i <- 0 until vgg.io.dataOut.bits.size )
     sintOut( vgg.io.dataOut.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
 
-  inQueue.bits := sintOut
-  inQueue.valid := queueIOOut.valid
-
-  val dataQ = inQueue
-
   val muxLyr = Module( new MuxLayer( dtype, 256, 4 ) )
-  muxLyr.io.dataIn <> dataQ
+  muxLyr.io.dataIn.bits := sinOut
+  muxLyr.io.dataIn.valid := queueIOOut.valid
+  queueIOOut.ready := muxLyr.io.dataIn.ready
 
   val bufferedSource_weights_fc = scala.io.Source.fromFile("src/main/resources/fc_1024_weights.csv")
   val weights_raw_fc = bufferedSource_weights_fc.getLines.toList
