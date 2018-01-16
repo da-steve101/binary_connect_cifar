@@ -12,13 +12,13 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
   val tPutPart1Int = math.max( tPut, 1 ).toInt
   val tPutOut = 1 //tPut / 4
   val imgSize = 32
-  val imgOutSize = imgSize / 2
+  val imgOutSize = imgSize / 8
   // val dtype = SInt( 16.W )
   // type T = dtype.type
   val fracBits = 4
   val abFracBits = 6
   val inGrp = 3
-  val noOut = 64
+  val noOut = 256
   val latency = 32 // just some bs for now
   val noIn = tPutPart1Int
 
@@ -33,7 +33,8 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
     tPutLyr : Double,
     imgSize : Int,
     noFilt : Int,
-    outFormat : ( Int, Int, Int )
+    outFormat : ( Int, Int, Int ),
+    noFifo : Boolean = false
   ) : DecoupledIO[Vec[T]] = {
 
     val bufferedSource = scala.io.Source.fromFile("src/main/resources/conv" + idx + "_weights.csv" )
@@ -50,7 +51,7 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
     val ab = ab_raw.map( _.split(",").toList.map( x => math.round( x.toFloat * ( 1 << abFracBits ) ).toInt ) )
 
     val tPutInt = math.max( tPutLyr, 1 ).toInt
-    val blMod = Module( new SimpleBufferLayer( dtype, imgSize, outFormat._3, outFormat, 10, 1, true, tPutInt ) )
+    val blMod = Module( new SimpleBufferLayer( dtype, imgSize, outFormat._3, outFormat, 10, 1, true, tPutInt, noFifo = noFifo ) )
     val conv1 = Module( new TriConvSum( dtype, weights_trans, tPutLyr ) )
 
     val scaleShift = Module( new ScaleAndShift(
@@ -75,7 +76,7 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
     kernelFormat : ( Int, Int, Int )
   ) : DecoupledIO[Vec[T]] = {
 
-    val blMod = Module( new SimpleBufferLayer( dtype, imgSize, kernelFormat._3, kernelFormat, 2, 2, false, tPutLyr ) )
+    val blMod = Module( new SimpleBufferLayer( dtype, imgSize, kernelFormat._3, kernelFormat, 2, 2, false, tPutLyr, noFifo = true ) )
     val tPutPool = math.max( tPutLyr / 2, 1 ).toInt // divide by stride
     val poolMod = Module( new PoolLayer( dtype, tPutPool, kernelFormat ) )
     blMod.io.dataIn <> inputVec
@@ -131,18 +132,18 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
     val dcpOut = Wire( Decoupled( bitsOut.cloneType ) )
     dcpOut.valid := inputVec.valid
     dcpOut.bits := bitsOut
-    inputVec.ready := dcpOut.ready
+    inputVec.ready := true.B
     dcpOut
   }
 
-  val lyr1 = createConvLyr( 1, io.dataIn, tPut, imgSize, 64, ( 3, 3, 3 )  )
+  val lyr1 = createConvLyr( 1, io.dataIn, tPut, imgSize, 64, ( 3, 3, 3 ), true )
   val lyr1Rev = reverseOrder( lyr1, tPutPart1Int )
-  val lyr2 = createConvLyr( 2, lyr1Rev, tPut, imgSize, 64, ( 3, 3, 64 ) )
+  val lyr2 = createConvLyr( 2, lyr1Rev, tPut, imgSize, 64, ( 3, 3, 64 ), true )
   val lyr2Rev = reverseOrder( lyr2, tPutPart1Int )
   val mp1 = createPoolLyr( lyr2Rev, tPutPart1Int, imgSize, ( 2, 2, 64 ) )
 
-  io.dataOut <> mp1
-  /*
+  // io.dataOut <> mp1
+
   val tPutPart2 = tPut / 4
   val tPutPart2Int = math.max( tPutPart2, 1 ).toInt
   val mp1Rev = reverseOrder( mp1, tPutPart2Int )
@@ -167,5 +168,4 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
   val lyr6Rev = reverseOrder( lyr6, tPutPart3Int )
   val mp3 = createPoolLyr( lyr6Rev, tPutPart3Int, imgSizePart3, ( 2, 2, 256 ) )
   io.dataOut <> mp3
-   */
 }

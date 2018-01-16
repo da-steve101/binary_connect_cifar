@@ -17,6 +17,7 @@ class SimpleBufferLayer[ T <: SInt](
   val stride : Int,
   val padding : Boolean,
   tPut : Int,
+  noFifo : Boolean = false,
   debug : Boolean = false
 ) extends NNLayer(
   dtype,
@@ -35,16 +36,22 @@ class SimpleBufferLayer[ T <: SInt](
   Predef.assert( imgSize % stride == 0, "ImgSize must be divisible by stride" )
   Predef.assert( imgSize % tPut == 0, "ImgSize must be divisible by tPut" )
 
-  val ready = io.dataOut.ready
+  val ready = true.B
   val dataInAsUInt = io.dataIn.bits.asInstanceOf[Vec[SInt]].map( _.asUInt() ).reduce( _ ## _ )
   val queueIOIn = Wire( Decoupled( dataInAsUInt.cloneType ) )
   queueIOIn.bits := dataInAsUInt
   queueIOIn.valid := io.dataIn.valid
 
-  val queueIOOut = Queue( queueIOIn, qSize )
-  io.dataIn.ready := queueIOIn.ready
+  val queueIOOut : DecoupledIO[UInt] = {
+    if ( noFifo )
+      queueIOIn
+    else
+      Queue( queueIOIn, qSize )
+  }
+
 
   queueIOOut.ready := ready
+  io.dataIn.ready := queueIOIn.ready
   val sintOut = Wire( io.dataIn.bits.cloneType )
   val dtypeWidth = dtype.getWidth
   for ( i <- 0 until io.dataIn.bits.size )
