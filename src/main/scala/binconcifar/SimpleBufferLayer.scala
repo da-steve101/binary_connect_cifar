@@ -36,7 +36,12 @@ class SimpleBufferLayer[ T <: SInt](
   Predef.assert( imgSize % stride == 0, "ImgSize must be divisible by stride" )
   Predef.assert( imgSize % tPut == 0, "ImgSize must be divisible by tPut" )
 
-  val ready = true.B
+  val ready = {
+    if ( noFifo )
+      true.B
+    else
+      io.dataOut.ready
+  }
   val dataInAsUInt = io.dataIn.bits.asInstanceOf[Vec[SInt]].map( _.asUInt() ).reduce( _ ## _ )
   val queueIOIn = Wire( Decoupled( dataInAsUInt.cloneType ) )
   queueIOIn.bits := dataInAsUInt
@@ -123,6 +128,8 @@ class SimpleBufferLayer[ T <: SInt](
 
   // is initialized when first and second window is valid for both cases
   val vld = windowedData.take( 2 ).map( _.valid ).reduce( _ && _ )
+  val vldReg = RegInit( false.B )
+  vldReg := vld
 
   val vldCycPerRow = ( imgSize / math.max( tPut, stride ) ).toInt
 
@@ -158,8 +165,10 @@ class SimpleBufferLayer[ T <: SInt](
         convRow._1.zipWithIndex.map( convGrp => {
           val isLeft = isFirst && convGrp._2 == convRow._1.size - 1
           val isRight = isLast && convGrp._2 == 0
-          val grpVec = Wire( Vec( grpSize, dtype.cloneType ) )
-          grpVec := convGrp._1
+          val grpVec = Reg( Vec( grpSize, dtype.cloneType ) )
+          when ( vld ) {
+            grpVec := convGrp._1
+          }
           if ( isTop || isBot || isLeft || isRight ) {
             val padConds : List[(Boolean, Bool)] = List(
               ( isRight, rowCntrLast ), // pad right
@@ -178,7 +187,7 @@ class SimpleBufferLayer[ T <: SInt](
     }).reduce( _ ++ _ )
 
     io.dataOut.bits := Vec( paddedData )
-    io.dataOut.valid := vld
+    io.dataOut.valid := vldReg
   } else {
     io.dataOut.bits := Vec( dataOut.reduce( _ ++ _ ).reduce( _ ++ _ ).map( _.toList ).reduce( _ ++ _ ) )
     // need to supress vld on odd strides
