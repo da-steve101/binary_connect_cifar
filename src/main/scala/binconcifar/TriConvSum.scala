@@ -113,9 +113,9 @@ private class SerialTriConvSum (
   val log2BW = log2Ceil( bitWidth )
   val log2Iter = log2Ceil( nIter )
 
-  def computeSum( posNums : Seq[UInt], negNums : Seq[UInt] ) : (UInt, Bool, Int) = {
-    var plusList = posNums.toList.map( x => { ( x, io.start ) } )
-    var minusList = negNums.toList.map( x => { ( x, io.start ) } )
+  def computeSum( posNums : Seq[UInt], negNums : Seq[UInt], startReg : Bool ) : (UInt, Bool, Int) = {
+    var plusList = posNums.toList.map( x => { ( x, startReg ) } )
+    var minusList = negNums.toList.map( x => { ( x, startReg ) } )
 
     var stages = 0
     while ( plusList.size > 1 || minusList.size > 0 ) {
@@ -172,9 +172,37 @@ private class SerialTriConvSum (
       }
     }
   }
-  val outSums = weights.map( conv => {
-    val numsOut = TriConvSum.mapToWires( conv, dataNibble )
-    computeSum( numsOut._1, numsOut._2 )
+
+  def pipelineFanout( nbl : List[Vec[Vec[Vec[UInt]]]], noReg : Int, noOut : Int ) : List[Vec[Vec[Vec[UInt]]]] = {
+    val noInLyr = ( 1 to noReg ).map( n => {
+      math.round( math.exp( math.log( noOut ) * n / noReg ) ).toInt
+    }).toList
+    val nblLyrs = ArrayBuffer[List[Vec[Vec[Vec[UInt]]]]]()
+    nblLyrs += nbl
+    for ( n <- noInLyr ) {
+      val lastLyr = nblLyrs.last
+      val fanout = ( n / lastLyr.size ).toInt
+      val fanouts = ( 0 until lastLyr.size ).map( i => {
+        if ( i >= n % lastLyr.size )
+          fanout
+        else
+          fanout + 1
+      }).toList
+      val newLyr = fanouts.zipWithIndex.map( f => {
+        List.fill( f._1 ) { RegNext( lastLyr( f._2 ) ) }
+      }).toList.reduce( _ ++ _ )
+      nblLyrs += newLyr
+    }
+    nblLyrs.last
+  }
+
+  val fanoutReg = 2
+  val dataFanout = pipelineFanout( List(dataNibble), fanoutReg, weights.size )
+  val startReg = ShiftRegister( io.start, fanoutReg )
+
+  val outSums = weights.zip( dataFanout ).map( conv => {
+    val numsOut = TriConvSum.mapToWires( conv._1, conv._2 )
+    computeSum( numsOut._1, numsOut._2, startReg )
   })
 
   val nibbleLat = outSums.map( _._3 ).max
@@ -196,7 +224,7 @@ private class SerialTriConvSum (
     outReg.reverse.reduce( _ ## _ ).asTypeOf( dtype )
   })
 
-  val latency = nibbleLat + nIter
+  val latency = nibbleLat + 1 + fanoutReg
   io.dataOut := Vec( unnibble )
 }
 
@@ -260,7 +288,7 @@ class TriConvSum (
     ShiftRegister( o._1, latency - noDelayReg - o._2 )
   }).reduce( (a, b) => Vec( a ++ b ) )
 
-  val convValid = ShiftRegister( io.dataIn.valid, latency, false.B, true.B )
+  val convValid = ShiftRegister( io.dataIn.valid && io.dataIn.ready, latency, false.B, true.B )
 
   io.dataOut.bits := convOut
   io.dataOut.valid := convValid

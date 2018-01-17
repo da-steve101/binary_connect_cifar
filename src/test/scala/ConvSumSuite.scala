@@ -9,7 +9,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class ConvSumTests( c : TriConvSum ) extends PeekPokeTester( c ) {
   val myRand = new Random
-  val cycs = c.latency*5
+  val cycs = c.latency*20
 
   def getRndFP() : BigInt = {
     val x = 2 * myRand.nextDouble() - 1
@@ -46,26 +46,31 @@ class ConvSumTests( c : TriConvSum ) extends PeekPokeTester( c ) {
   })
 
   val chosenOutput = ArrayBuffer[List[BigInt]]()
-  val vldCheck = ArrayBuffer[Boolean]()
   var inputPtr = 0
   var outputPtr = 0
+  var vld = false
+  poke( c.io.dataOut.ready, true )
+  poke( c.io.dataIn.valid, vld )
   for ( cyc <- 0 until cycs ) {
-    val vld = myRand.nextInt(4) != 0
-    vldCheck += vld
+    vld = vld ||  myRand.nextInt(4) != 0
     poke( c.io.dataIn.valid, vld )
-    val imgData = img(cyc).reduce( _ ++ _ ).reduce( _ ++ _ ).reduce( _ ++ _ )
+    val rdy = peek( c.io.dataIn.ready ) == 1
+    val imgData = img(inputPtr).reduce( _ ++ _ ).reduce( _ ++ _ ).reduce( _ ++ _ )
     for ( dataIn1 <- c.io.dataIn.bits.zip( imgData ) )
       poke( dataIn1._1, dataIn1._2 )
-    if ( vld )
-      chosenOutput += convRes(cyc).toList
+    if ( vld && rdy ) {
+      chosenOutput += convRes(inputPtr).toList
+      inputPtr += 1
+    }
+    if ( rdy )
+      vld = false
     step( 1 )
-    if ( cyc >= c.latency - 1 ) {
-      expect( c.io.dataOut.valid, vldCheck( cyc - c.latency + 1 ) )
-      if ( vldCheck( cyc - c.latency + 1 ) ) {
-        for ( i <- 0 until chosenOutput( outputPtr ).size )
-          expect( c.io.dataOut.bits(i), chosenOutput( outputPtr )(i) )
-        outputPtr += 1
-      }
+    val vldOut = peek( c.io.dataOut.valid ) == 1
+    peek( c.io.dataOut.bits )
+    if ( vldOut ) {
+      for ( i <- 0 until chosenOutput( outputPtr ).size )
+        expect( c.io.dataOut.bits(i), chosenOutput( outputPtr )(i) )
+      outputPtr += 1
     }
   }
 }
@@ -82,22 +87,19 @@ class ConvSumSuite extends ChiselFlatSpec {
       }).toList
     }).toList
   }
+  val tPut = 0.25
+  val filter_size = 3
+  val grpSize = 8
 
   behavior of "ConvSumSuite"
   backends foreach {backend =>
     it should s"correctly compute the convolution $backend" in {
-      for ( filter_size <- List( 3, 5 ) ) {
-        for ( grpSize <- List( 1, 3, 8 ) ) {
-          val outFormat = ( filter_size, filter_size, grpSize )
-          val weights = List.fill( 8 ) { generate_filter( outFormat ) }
-          for ( tPut <- 1 until 6 ) {
-            println( "outFormat = " + outFormat + ", tPut " + tPut )
-            Driver(() => {
-              new TriConvSum( SInt( 16.W ), weights, tPut )
-            }, backend, true )( c => new ConvSumTests( c ) ) should be (true)
-          }
-        }
-      }
+      val outFormat = ( filter_size, filter_size, grpSize )
+      val weights = List.fill( 8 ) { generate_filter( outFormat ) }
+      println( "outFormat = " + outFormat + ", tPut " + tPut )
+      Driver(() => {
+        new TriConvSum( SInt( 16.W ), weights, tPut )
+      }, "verilator", true )( c => new ConvSumTests( c ) ) should be (true)
     }
   }
 }
