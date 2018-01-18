@@ -24,7 +24,7 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
         BigInt( tmp % ( 1 << 7 ) )
       })
     })
-    println( "" + imData )
+    // println( "" + imData )
     imData
   })
 
@@ -58,12 +58,13 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
     })
   }).reduce( _ ++ _ )
 
-  println( "convOut = " + convOut )
+  // println( "convOut = " + convOut )
 
   val noConvs = convOut.size
   var convCount = 0
   var imgRow = 0
   var imgCol = 0
+  var vldSet = false
   println( "noConvs = " + noConvs )
   while ( convCount < noImgs * noConvs ) { //  TODO: continue to next img
     val rdy = myRand.nextInt( 2 ) != 0
@@ -88,8 +89,11 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
     val outVld = peek( c.io.dataOut.valid ) == 1
     // println( "bits = " + peek( c.io.dataOut.bits ) )
     // println( "outVld = " + outVld )
+    if ( vldSet )
+      expect( c.io.dataOut.valid, vldSet )
     for ( i <- 0 until c.noOut ) {
-      if ( outVld && rdy ) {
+      if ( outVld ) {
+        vldSet = true
         val offset = i * c.outFormat._1 * c.outFormat._2 * c.outFormat._3
         for ( j <- 0 until outFormat._1 ) {
           for ( k <- 0 until outFormat._2 ) {
@@ -98,7 +102,10 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
                 convOut( convCount % noConvs )( c.outFormat._1 - 1 - j )( c.outFormat._2 - 1 - k )( l ) )
           }
         }
-        convCount += 1
+        if ( rdy ) {
+          convCount += 1
+          vldSet = false
+        }
       }
     }
   }
@@ -108,7 +115,7 @@ class SimpleBufferLayerSuite extends ChiselFlatSpec {
   behavior of "SimpleBufferLayer"
   val grpSizes = List( 1, 2, 3, 5, 8 )
   val qSize = 10
-  val tPuts = List( 1, 2, 4, 8 )
+  val tPuts = List( 1 ) //, 2, 4, 8 )
   val convImgComb = List( ( 2, 2, 32, false ), ( 3, 1, 32, true ) )
   backends foreach {backend =>
     it should s"buffer inputs on a layer using $backend" in {

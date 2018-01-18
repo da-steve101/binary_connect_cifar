@@ -180,7 +180,7 @@ class SimpleBufferLayer[ T <: SInt](
               ( isTop, colCntrLast )    // pad top
             )
             val padIt = padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ )
-            when ( padIt && ready ) {
+            when ( padIt & rdyNxt ) {
               grpVec := zeroGrp
             }
           }
