@@ -87,7 +87,7 @@ class ConvSumSuite extends ChiselFlatSpec {
       }).toList
     }).toList
   }
-  val tPut = 0.25
+  val tPut = 0.0625
   val filter_size = 3
   val grpSize = 8
 

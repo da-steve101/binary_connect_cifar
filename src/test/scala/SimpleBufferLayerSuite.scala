@@ -65,8 +65,9 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
   var imgRow = 0
   var imgCol = 0
   println( "noConvs = " + noConvs )
-  poke( c.io.dataOut.ready, true )
   while ( convCount < noImgs * noConvs ) { //  TODO: continue to next img
+    val rdy = myRand.nextInt( 2 ) != 0
+    poke( c.io.dataOut.ready, rdy )
     val vldRnd = myRand.nextInt( 5 ) != 0
     val vld = ( peek( c.io.dataIn.ready ) == 1 ) &&  vldRnd
     poke( c.io.dataIn.valid, vldRnd )
@@ -88,7 +89,7 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
     // println( "bits = " + peek( c.io.dataOut.bits ) )
     // println( "outVld = " + outVld )
     for ( i <- 0 until c.noOut ) {
-      if ( outVld ) {
+      if ( outVld && rdy ) {
         val offset = i * c.outFormat._1 * c.outFormat._2 * c.outFormat._3
         for ( j <- 0 until outFormat._1 ) {
           for ( k <- 0 until outFormat._2 ) {
@@ -123,7 +124,7 @@ class SimpleBufferLayerSuite extends ChiselFlatSpec {
               padding + ", tPut = " + tPut )
             Driver(() => {
               new SimpleBufferLayer( SInt( 16.W ), imgSize, grpSize, outFormat, qSize, stride, padding, tPut )
-            }, backend )( c => new SimpleBufferLayerTests( c ) ) should be (true)
+            }, backend, false )( c => new SimpleBufferLayerTests( c ) ) should be (true)
           }
         }
       }

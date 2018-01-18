@@ -128,8 +128,11 @@ class SimpleBufferLayer[ T <: SInt](
 
   // is initialized when first and second window is valid for both cases
   val vld = windowedData.take( 2 ).map( _.valid ).reduce( _ && _ )
+  val rdyNxt = RegNext( ready )
   val vldReg = RegInit( false.B )
-  vldReg := vld
+  when ( rdyNxt ) {
+    vldReg := vld
+  }
 
   val vldCycPerRow = ( imgSize / math.max( tPut, stride ) ).toInt
 
@@ -166,7 +169,7 @@ class SimpleBufferLayer[ T <: SInt](
           val isLeft = isFirst && convGrp._2 == convRow._1.size - 1
           val isRight = isLast && convGrp._2 == 0
           val grpVec = Reg( Vec( grpSize, dtype.cloneType ) )
-          when ( vld ) {
+          when ( vld && rdyNxt ) {
             grpVec := convGrp._1
           }
           if ( isTop || isBot || isLeft || isRight ) {
@@ -177,7 +180,7 @@ class SimpleBufferLayer[ T <: SInt](
               ( isTop, colCntrLast )    // pad top
             )
             val padIt = padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ )
-            when ( padIt ) {
+            when ( padIt && ready ) {
               grpVec := zeroGrp
             }
           }
