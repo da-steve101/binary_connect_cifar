@@ -140,7 +140,7 @@ def compute_conv_lyr( img, var_dict, idx, conv_prec, ab_prec ):
     relu_res = floor_to( relu_res, conv_prec )
     return relu_res, a, b
 
-def compute_dense_lyr( img, var_dict, lyr_name, dense_prec, ab_prec ):
+def compute_dense_lyr( img, var_dict, lyr_name, dense_prec, ab_prec, no_ss = False ):
     img = floor_to( img, dense_prec )
     img_flat = img.flatten()
     mat, scaling_factor = get_ternary( var_dict[lyr_name] )
@@ -155,6 +155,8 @@ def compute_dense_lyr( img, var_dict, lyr_name, dense_prec, ab_prec ):
         b = bias
         b = round_to( b, ab_prec )
     matmul_res = floor_to( img_flat.dot( mat ), dense_prec )
+    if no_ss:
+        return matmul_res, a, b
     return linear_shift( matmul_res, a, b, dense_prec ), a, b
 
 def get_image( fname ):
@@ -188,7 +190,7 @@ def inference( img, var_dict, conv_prec, ab_prec, filename = None ):
     img = compute_relu( img )
     if filename is not None:
         write_to_file( img, filename + "_fc1024.csv", no_dims = 1 )
-    pred, a, b = compute_dense_lyr( img, var_dict, "softmax", conv_prec, ab_prec )
+    pred, a, b = compute_dense_lyr( img, var_dict, "softmax", conv_prec, ab_prec, True )
     if filename is not None:
         write_to_file( pred, filename + "_sm10.csv", no_dims = 1 )
     return pred

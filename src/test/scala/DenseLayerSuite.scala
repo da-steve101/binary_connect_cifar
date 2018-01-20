@@ -18,7 +18,7 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
   // val bufferedSource_img = scala.io.Source.fromFile("src/main/resources/airplane4_mp_3.csv")
   // val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_fc_1024_preBN.csv")
   val bufferedSource_img = scala.io.Source.fromFile("src/main/resources/airplane4_fc1024.csv" )
-  val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_softmax_preBN.csv")
+  val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_sm10.csv")
 
   val img_raw = bufferedSource_img.getLines.toList
 
@@ -34,22 +34,20 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
   val dense_raw = bufferedSource_out.getLines.toList.head
   val dense_res = dense_raw.split(",").toList.map( x => {
     BigInt(math.round( x.toFloat * ( 1 << c.fracBits ) ).toInt)
-  })
+  }).take(1)
 
   var imgRow = 0
   var imgCol = 0
   var imgIdx = 0
+  poke( c.io.dataOut.ready, true )
   for ( cyc <- 0 until cycs ) {
     val vld = myRand.nextInt(4) != 0
-    poke( c.io.dataOut.ready, true )
     poke( c.io.dataIn.valid, vld )
     for ( i <- 0 until c.tPut ) {
-      // poke( c.io.dataIn.bits( i ), img( imgRow )( imgCol )( imgIdx ) )
       poke( c.io.dataIn.bits( i ), img( imgIdx ) )
       imgIdx += 1
     }
     if ( vld ) {
-      // if ( imgIdx >= ( c.noIn / ( c.imgSize * c.imgSize ) ) - 1 ) {
       if ( imgIdx >= c.noIn ) {
         imgCol += 1
         imgIdx = 0
@@ -77,7 +75,7 @@ class DenseLayerSuite extends ChiselFlatSpec {
 
   val bufferedSource_weights_sm = scala.io.Source.fromFile("src/main/resources/softmax_weights.csv")
   val weights_raw_sm = bufferedSource_weights_sm.getLines.toList
-  val weights_sm = weights_raw_sm.map( _.split(",").toList.map( x => x.toInt ).toList ).transpose
+  val weights_sm = weights_raw_sm.map( _.split(",").toList.map( x => x.toInt ).toList.take(1) ).transpose
 
   val bufferedSource_weights_fc = scala.io.Source.fromFile("src/main/resources/fc_1024_weights.csv")
   val weights_raw_fc = bufferedSource_weights_fc.getLines.toList
