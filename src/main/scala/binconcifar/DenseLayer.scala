@@ -38,7 +38,7 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
   }
 
   val cntr = RegInit( 0.U( log2Ceil( weights.head.size / tPut ).W ) )
-  when ( io.dataIn.valid && io.dataOut.ready ) {
+  when ( io.dataIn.valid ) {
     cntr := cntr + 1.U
   }
 
@@ -117,7 +117,7 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
     }
   }
 
-  io.dataIn.ready := io.dataOut.ready
+  io.dataIn.ready := true.B
   io.dataOut.valid := rst & done
   io.dataOut.bits := cummulativeSums
 

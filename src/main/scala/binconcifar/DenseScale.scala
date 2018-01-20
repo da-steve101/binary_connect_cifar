@@ -16,12 +16,12 @@ class DenseScale(
     val dataOut = Decoupled( Vec( 1, dtype ) )
   })
 
-  io.dataIn.ready := io.dataOut.ready
+  io.dataIn.ready := true.B
 
   val cntrBits = log2Ceil( a.size )
 
   val scaleCntr = RegInit( 0.U( cntrBits.W ) )
-  when ( io.dataIn.valid && io.dataOut.ready ) {
+  when ( io.dataIn.valid ) {
     scaleCntr := scaleCntr + 1.U
   }
 

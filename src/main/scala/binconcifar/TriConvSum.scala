@@ -252,7 +252,7 @@ class TriConvSum (
   math.ceil( tput ).toInt
 ) {
 
-  io.dataIn.ready := io.dataOut.ready
+  io.dataIn.ready := true.B // always ready with tput = 1
   for ( d <- io.vldMask )
     d := false.B
 
@@ -261,13 +261,13 @@ class TriConvSum (
   val inWidth = dtype.cloneType.getWidth
   val bitWidth = math.ceil( inWidth * tput ).toInt
   val log2Iter = math.max( log2Ceil( math.ceil( inWidth.toFloat / bitWidth ).toInt ), 1 ).toInt
-  val rdyCnt = RegInit( 0.U( log2Iter.W ) )
+  val rdyCnt = RegInit( 0.U( log2Iter.W ) ) // NOTE: this is broken for not powers of 2
   if ( bitWidth < inWidth ) {
     // set ready signals
     when ( io.dataIn.valid || rdyCnt > 0.U ) {
       rdyCnt := rdyCnt + 1.U
     }
-    io.dataIn.ready := ( rdyCnt === (( 1 << log2Iter) - 1).U || ( !io.dataIn.valid && rdyCnt === 0.U ) ) && io.dataOut.ready
+    io.dataIn.ready := ( rdyCnt === (( 1 << log2Iter) - 1).U || ( !io.dataIn.valid && rdyCnt === 0.U ) )
   }
 
   val noDelayReg = 1

@@ -62,7 +62,7 @@ class PoolLayer[ T <: SInt](
   tput.toInt
 ) {
 
-  io.dataIn.ready := io.dataOut.ready
+  io.dataIn.ready := true.B
 
   for ( d <- io.vldMask )
     d := false.B

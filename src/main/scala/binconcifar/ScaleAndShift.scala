@@ -47,5 +47,5 @@ class ScaleAndShift[ T <: SInt] (
   val output = Vec( mult_res.reduce( _ ++ _ ) )
   io.dataOut.bits := output
   io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency, false.B, true.B )
-  io.dataIn.ready := io.dataOut.ready
+  io.dataIn.ready := true.B
 }
