@@ -153,6 +153,7 @@ private class SerialTriConvSum (
   when ( nibbleCntr > 0.U || io.start ) {
     nibbleCntr := nibbleCntr + 1.U
   }
+  val nibReg = RegNext( nibbleCntr )
   val dataNibble = Wire( Vec(
     weights(0).size,
     Vec( weights(0)(0).size,
@@ -162,12 +163,13 @@ private class SerialTriConvSum (
     for ( i <- 0 until weights(0).size ) {
       for ( j <- 0 until weights(0)(0).size ) {
         for ( k <- 0 until weights(0)(0)(0).size ) {
+          val thisNibble = RegNext( io.dataIn( i )( j )( k )( bitWidth * ( x + 1 ) - 1, bitWidth*x ) )
           if ( x > 0 ) {
-            when ( nibbleCntr === x.U ) {
-              dataNibble( i )( j )( k ) := io.dataIn( i )( j )( k )( bitWidth * ( x + 1 ) - 1, bitWidth*x )
+            when ( nibReg === x.U ) {
+              dataNibble( i )( j )( k ) := thisNibble
             }
           } else
-              dataNibble( i )( j )( k ) := io.dataIn( i )( j )( k )( bitWidth * ( x + 1 ) - 1, bitWidth*x )
+              dataNibble( i )( j )( k ) := thisNibble
         }
       }
     }
@@ -198,7 +200,7 @@ private class SerialTriConvSum (
 
   val fanoutReg = 2
   val dataFanout = pipelineFanout( List(dataNibble), fanoutReg, weights.size )
-  val startReg = ShiftRegister( io.start, fanoutReg )
+  val startReg = ShiftRegister( io.start, fanoutReg + 1 )
 
   val outSums = weights.zip( dataFanout ).map( conv => {
     val numsOut = TriConvSum.mapToWires( conv._1, conv._2 )
@@ -224,7 +226,7 @@ private class SerialTriConvSum (
     outReg.reverse.reduce( _ ## _ ).asTypeOf( dtype )
   })
 
-  val latency = nibbleLat + 1 + fanoutReg
+  val latency = nibbleLat + 2 + fanoutReg
   io.dataOut := Vec( unnibble )
 }
 

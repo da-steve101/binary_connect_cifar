@@ -64,7 +64,6 @@ class ConvSumTests( c : TriConvSum ) extends PeekPokeTester( c ) {
     }
     if ( rdy )
       vld = false
-    step( 1 )
     val vldOut = peek( c.io.dataOut.valid ) == 1
     peek( c.io.dataOut.bits )
     if ( vldOut ) {
@@ -72,6 +71,7 @@ class ConvSumTests( c : TriConvSum ) extends PeekPokeTester( c ) {
         expect( c.io.dataOut.bits(i), chosenOutput( outputPtr )(i) )
       outputPtr += 1
     }
+    step( 1 )
   }
 }
 
@@ -87,7 +87,7 @@ class ConvSumSuite extends ChiselFlatSpec {
       }).toList
     }).toList
   }
-  val tPut = 0.0625
+  val tPut = 0.25
   val filter_size = 3
   val grpSize = 8
 
@@ -99,7 +99,7 @@ class ConvSumSuite extends ChiselFlatSpec {
       println( "outFormat = " + outFormat + ", tPut " + tPut )
       Driver(() => {
         new TriConvSum( SInt( 16.W ), weights, tPut )
-      }, "verilator", true )( c => new ConvSumTests( c ) ) should be (true)
+      }, "verilator", false )( c => new ConvSumTests( c ) ) should be (true)
     }
   }
 }
