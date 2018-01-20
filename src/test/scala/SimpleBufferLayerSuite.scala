@@ -66,17 +66,27 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
   var imgCol = 0
   var vldSet = false
   println( "noConvs = " + noConvs )
+  var rdyCnt = 0
+  var vldCnt = 0
   while ( convCount < noImgs * noConvs ) { //  TODO: continue to next img
-    val rdy = myRand.nextInt( 2 ) != 0
+    /*
+    val vld = vldCnt == 0
+    vldCnt = ( vldCnt + 1 ) % 4
+    val rdy = ( !( peek( c.io.dataOut.valid ) == 1 ) && rdyCnt == 0 ) || rdyCnt == 3 // myRand.nextInt( 4 ) != 0
+    if ( peek( c.io.dataOut.valid ) == 1 )
+      rdyCnt = ( rdyCnt + 1 ) % 4
+     */
+    val rdy = ( vldCnt > 8 ) || ( myRand.nextInt( 4 ) != 0 )
+    val vld = myRand.nextInt( 2 ) != 0
+    if ( vld )
+      vldCnt += 1
+    if ( rdy && vldCnt > 0 )
+      vldCnt -= 1
     poke( c.io.dataOut.ready, rdy )
-    val vldRnd = myRand.nextInt( 5 ) != 0
-    val vld = ( peek( c.io.dataIn.ready ) == 1 ) &&  vldRnd
-    poke( c.io.dataIn.valid, vldRnd )
+    poke( c.io.dataIn.valid, vld )
     for ( i <- 0 until c.noIn ) {
-      for ( j <- 0 until c.outFormat._3 ) {
+      for ( j <- 0 until c.outFormat._3 )
         poke( c.io.dataIn.bits( ( c.noIn - 1 - i ) * c.outFormat._3 + j ), img( imgRow )( imgCol )(j) )
-        // println( "in(" + vld + ") = " + img( imgRow )( imgCol )(j) )
-      }
       if ( vld ) {
         imgCol += 1
         if ( imgCol == c.imgSize ) {
@@ -85,15 +95,17 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
         }
       }
     }
-    step(1)
+    expect( c.io.dataIn.ready, true ) // assert always ready ...
     val outVld = peek( c.io.dataOut.valid ) == 1
-    // println( "bits = " + peek( c.io.dataOut.bits ) )
-    // println( "outVld = " + outVld )
+    val outRdy = peek( c.io.dataOut.ready ) == 1
+    if ( outRdy && outVld )
+      vldSet = false
+    if ( outVld && !outRdy )
+      vldSet = true
     if ( vldSet )
       expect( c.io.dataOut.valid, vldSet )
     for ( i <- 0 until c.noOut ) {
       if ( outVld ) {
-        vldSet = true
         val offset = i * c.outFormat._1 * c.outFormat._2 * c.outFormat._3
         for ( j <- 0 until outFormat._1 ) {
           for ( k <- 0 until outFormat._2 ) {
@@ -102,12 +114,11 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
                 convOut( convCount % noConvs )( c.outFormat._1 - 1 - j )( c.outFormat._2 - 1 - k )( l ) )
           }
         }
-        if ( rdy ) {
+        if ( outRdy )
           convCount += 1
-          vldSet = false
-        }
       }
     }
+    step(1)
   }
 }
 

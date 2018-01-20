@@ -34,16 +34,17 @@ class SimpleSlidingWindow[ T <: Bits ](
   }
 
   val io = IO( new Bundle {
-    val dataIn = Input( Valid( Vec( groupsPerCycle * grpSize, genType.cloneType ) ))
-    val dataOut = Output( Valid( Vec( outSize * grpSize, genType.cloneType ) ))
+    val dataIn = Flipped( Valid( Vec( groupsPerCycle * grpSize, genType.cloneType ) ))
+    val dataOut = Decoupled( Vec( outSize * grpSize, genType.cloneType ) )
   })
 
+  val nextData = io.dataIn.valid & io.dataOut.ready
   val windowRegs = List.fill( actualWindowSize ) {
     List.fill( grpSize ) {
       Reg( genType.cloneType )
     }
   }
-  when ( io.dataIn.valid ) {
+  when ( nextData ) {
     for ( i <- 0 until windowRegs.size ) {
       for ( j <- 0 until grpSize ) {
         if ( i < groupsPerCycle )
@@ -61,13 +62,13 @@ class SimpleSlidingWindow[ T <: Bits ](
   def getMask() : Bool = {
     if ( groupsPerCycle < stride ) { // only needed when grps/cyc = 1 stride = 2
       val mask = RegInit( false.B )
-      when ( io.dataIn.valid ) {
+      when ( nextData ) {
         mask := !mask
       }
       mask
     } else if ( windowSize == 3 ) {
       val initReg = RegInit( false.B )
-      when ( io.dataIn.valid ) {
+      when ( nextData ) {
         initReg := true.B
       }
       initReg
@@ -76,7 +77,9 @@ class SimpleSlidingWindow[ T <: Bits ](
     }
   }
 
-  vldReg := io.dataIn.valid & getMask()
+  when( io.dataOut.ready ) {
+    vldReg := io.dataIn.valid & getMask()
+  }
 
   // get output eg) windowSize = 3 and tPut = 4
   // 3 2 1 0 _

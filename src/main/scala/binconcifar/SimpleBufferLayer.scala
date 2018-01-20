@@ -54,15 +54,12 @@ class SimpleBufferLayer[ T <: SInt](
       Queue( queueIOIn, qSize )
   }
 
-
   queueIOOut.ready := ready
   io.dataIn.ready := queueIOIn.ready
   val sintOut = Wire( io.dataIn.bits.cloneType )
   val dtypeWidth = dtype.getWidth
   for ( i <- 0 until io.dataIn.bits.size )
     sintOut( io.dataIn.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
-
-  val nextData = queueIOOut.valid & ready
 
   // just hacky compatibility for now ...
   for ( v <- io.vldMask )
@@ -87,22 +84,22 @@ class SimpleBufferLayer[ T <: SInt](
     while ( memBuffers.size < outFormat._1 ) {
       val mb = memBuffers.last
       val output = Wire( inputVec.cloneType )
-      output.bits := MemShiftRegister( mb.bits, bufferSize, inputVec.valid )
-      output.valid := inputVec.valid & initCounter( mb.valid, bufferSize )
+      output.bits := MemShiftRegister( mb.bits, bufferSize, inputVec.valid & ready )
+      output.valid := inputVec.valid & initCounter( mb.valid & ready, bufferSize )
       memBuffers += { output }
     }
     memBuffers.toList
   }
 
   val queueVld = Wire( Valid( sintOut.cloneType ) )
-  queueVld.valid := nextData
+  queueVld.valid := queueIOOut.valid
   queueVld.bits := sintOut
   val memBuffers = getMemBuffers( queueVld, cycPerRow )
 
   def windowTheData(
     vecIn : ValidIO[Vec[T]],
     stride : Int
-  ) : ValidIO[Vec[T]] = {
+  ) : DecoupledIO[Vec[T]] = {
     val sldWin = Module( new SimpleSlidingWindow(
       dtype,
       grpSize,
@@ -111,6 +108,7 @@ class SimpleBufferLayer[ T <: SInt](
       stride
     ))
     sldWin.io.dataIn <> vecIn
+    sldWin.io.dataOut.ready := ready
     sldWin.io.dataOut
   }
 
@@ -128,22 +126,15 @@ class SimpleBufferLayer[ T <: SInt](
 
   // is initialized when first and second window is valid for both cases
   val vld = windowedData.take( 2 ).map( _.valid ).reduce( _ && _ )
-  val rdyNxt = RegNext( ready )
-  val vldReg = RegInit( false.B )
-  when ( rdyNxt ) {
-    vldReg := vld
-  }
 
   val vldCycPerRow = ( imgSize / math.max( tPut, stride ) ).toInt
 
   val vldSet = RegInit( false.B )
-  when ( vld ) {
-    vldSet := true.B
-  }
   when ( ready ) {
-    vldSet := false.B
+    vldSet := vld
   }
-  val rowCntr = Counter( (vld || vldSet) && ready, vldCycPerRow )
+
+  val rowCntr = Counter( vld && ready, vldCycPerRow )
   val colCntr = Counter( rowCntr._2, imgSize / stride )
   val lastCol = imgSize - 1
   val lastRow = vldCycPerRow - 1
@@ -169,7 +160,7 @@ class SimpleBufferLayer[ T <: SInt](
           val isLeft = isFirst && convGrp._2 == convRow._1.size - 1
           val isRight = isLast && convGrp._2 == 0
           val grpVec = Reg( Vec( grpSize, dtype.cloneType ) )
-          when ( vld && rdyNxt ) {
+          when ( vld && ready ) {
             grpVec := convGrp._1
           }
           if ( isTop || isBot || isLeft || isRight ) {
@@ -180,7 +171,7 @@ class SimpleBufferLayer[ T <: SInt](
               ( isTop, colCntrLast )    // pad top
             )
             val padIt = padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ )
-            when ( padIt & rdyNxt ) {
+            when ( padIt && ready ) {
               grpVec := zeroGrp
             }
           }
@@ -190,13 +181,13 @@ class SimpleBufferLayer[ T <: SInt](
     }).reduce( _ ++ _ )
 
     io.dataOut.bits := Vec( paddedData )
-    io.dataOut.valid := vldReg
+    io.dataOut.valid := vldSet
   } else {
     io.dataOut.bits := Vec( dataOut.reduce( _ ++ _ ).reduce( _ ++ _ ).map( _.toList ).reduce( _ ++ _ ) )
     // need to supress vld on odd strides
     val colCntrReg = {
       if ( tPut == 1 )
-        RegEnable( !colCntr._1(0), false.B, nextData )
+        RegEnable( !colCntr._1(0), false.B, queueIOOut.valid & ready)
       else
         RegEnable( !colCntr._1(0), false.B, vld )
     }
