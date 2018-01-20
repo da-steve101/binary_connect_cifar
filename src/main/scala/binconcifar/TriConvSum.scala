@@ -199,11 +199,18 @@ private class SerialTriConvSum (
   }
 
   val fanoutReg = 2
-  val dataFanout = pipelineFanout( List(dataNibble), fanoutReg, weights.size )
   val startReg = ShiftRegister( io.start, fanoutReg + 1 )
 
+  /*
+  val dataFanout = pipelineFanout( List(dataNibble), fanoutReg, weights.size )
   val outSums = weights.zip( dataFanout ).map( conv => {
     val numsOut = TriConvSum.mapToWires( conv._1, conv._2 )
+    computeSum( numsOut._1, numsOut._2, startReg )
+  })
+   */
+  val dataFanout = ShiftRegister( dataNibble, fanoutReg )
+  val outSums = weights.map( conv => {
+    val numsOut = TriConvSum.mapToWires( conv, dataFanout )
     computeSum( numsOut._1, numsOut._2, startReg )
   })
 
