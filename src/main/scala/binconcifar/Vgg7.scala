@@ -132,7 +132,7 @@ class Vgg7[ T <: SInt]( dtype : T ) extends Module {
     val dcpOut = Wire( Decoupled( bitsOut.cloneType ) )
     dcpOut.valid := inputVec.valid
     dcpOut.bits := bitsOut
-    inputVec.ready := true.B
+    inputVec.ready := dcpOut.ready
     dcpOut
   }
 
