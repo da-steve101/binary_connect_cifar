@@ -5,15 +5,25 @@ It implements a network with half the number of convolutional filters as in this
 
 # Network architecture
 conv1 => 64x3x3x3
+
 conv2 => 64x3x3x64
+
 mp1 => 2x2 kernel with stride 2
+
 conv3 => 128x3x3x64
+
 conv4 => 128x3x3x128
+
 mp2 => 2x2 kernel with stride 2
+
 conv5 => 256x3x3x128
+
 conv6 => 256x3x3x256
+
 mp3 => 2x2 kernel with stride 2
+
 dense => 4096x1024
+
 dense => 1024x10
 
 # Running
