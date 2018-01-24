@@ -34,7 +34,7 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
   val dense_raw = bufferedSource_out.getLines.toList.head
   val dense_res = dense_raw.split(",").toList.map( x => {
     BigInt(math.round( x.toFloat * ( 1 << c.fracBits ) ).toInt)
-  }).take(1)
+  })
 
   var imgRow = 0
   var imgCol = 0
@@ -75,7 +75,7 @@ class DenseLayerSuite extends ChiselFlatSpec {
 
   val bufferedSource_weights_sm = scala.io.Source.fromFile("src/main/resources/softmax_weights.csv")
   val weights_raw_sm = bufferedSource_weights_sm.getLines.toList
-  val weights_sm = weights_raw_sm.map( _.split(",").toList.map( x => x.toInt ).toList.take(1) ).transpose
+  val weights_sm = weights_raw_sm.map( _.split(",").toList.map( x => x.toInt ).toList ).transpose
 
   val bufferedSource_weights_fc = scala.io.Source.fromFile("src/main/resources/fc_1024_weights.csv")
   val weights_raw_fc = bufferedSource_weights_fc.getLines.toList
@@ -90,7 +90,7 @@ class DenseLayerSuite extends ChiselFlatSpec {
   backends foreach {backend =>
     it should s"correctly compute the denseLayer $backend" in {
       Driver(() => {
-        new DenseLayer( SInt( 16.W ).cloneType, 1, weights )
+        new DenseLayer( SInt( 16.W ).cloneType, 4, weights )
       }, "verilator", true )( c => new DenseComputeTests( c ) ) should be (true)
     }
   }

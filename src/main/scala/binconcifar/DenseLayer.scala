@@ -4,6 +4,42 @@ package binconcifar
 import chisel3._
 import chisel3.util._
 
+private class DenseWeights( weights : Seq[Seq[Int]], tPut : Int ) extends Module {
+
+  val uintWeights = weights.map( nums => {
+    nums.grouped( tPut ).map( grp => {
+      grp.map( x => {
+        if ( x == 1 )
+          1
+        else if ( x == -1 )
+          2
+        else
+          0
+      }).zipWithIndex.map( xi => {
+        xi._1 << 2 * xi._2
+      }).sum
+    }).toList
+  }).toList
+
+  val weightsWidth = tPut * 2 // 2 bits per weight
+  val outVecSize = uintWeights.size
+  val vecSize = uintWeights.head.size
+
+  val io = IO( new Bundle {
+    val readAddr = Input( UInt( log2Ceil( vecSize ).W ) )
+    val out = Output( UInt( (outVecSize * weightsWidth).W ) )
+  })
+
+  val uintMem = ( 0 until vecSize ).map( i => {
+    val uintCombined = uintWeights.zipWithIndex.map( x => BigInt( x._1(i) ) << ( weightsWidth * x._2 ) ).sum
+    uintCombined.U( ( outVecSize * weightsWidth ).W )
+  }).toList
+
+  val weightsROM = Vec( uintMem )
+  val addrDelay = RegNext( io.readAddr )
+  io.out := RegNext( weightsROM( addrDelay ) )
+}
+
 class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extends Module {
   val fracBits = 4
   val noOut = weights.size
@@ -18,36 +54,18 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
   // store the weights in a RAM
   val weightsWidth = tPut * 2
   val weightType = UInt( weightsWidth.W )
-  val weightsRAM = List.fill( noOut ) { Wire( Vec( noIn / tPut, weightType ) ) }
-
-  for ( nums <- weights.zipWithIndex ) {
-    for( grp <- nums._1.grouped( tPut ).zipWithIndex ) {
-      val weights_val = grp._1.map( x => {
-        if ( x == 1 )
-          1
-        else if ( x == -1 )
-          2
-        else
-          0
-      }).zipWithIndex.map( xi => {
-        xi._1 << 2 * xi._2
-      }).sum
-      val weightsVec = weights_val.U( weightsWidth.W )
-      weightsRAM( nums._2 )( grp._2 ) := weightsVec
-    }
-  }
 
   val cntr = RegInit( 0.U( log2Ceil( weights.head.size / tPut ).W ) )
   when ( io.dataIn.valid ) {
     cntr := cntr + 1.U
   }
 
-  val cntr_delay = RegNext( cntr )
-
   // read tPut of them each cycle from the RAM
   val currWeights = Wire( Vec( weights.size, weightType ) )
+  private val weightsRAM = Module( new DenseWeights( weights, tPut ) )
+  weightsRAM.io.readAddr := cntr
   for ( i <- 0 until weights.size )
-    currWeights( i ) := RegNext( weightsRAM( i )( cntr_delay ) )
+    currWeights( i ) := weightsRAM.io.out( weightsWidth*(i+1) - 1, weightsWidth*i )
 
   val currActs = RegNext( io.dataIn.bits )
 
