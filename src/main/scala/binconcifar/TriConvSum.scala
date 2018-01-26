@@ -96,6 +96,62 @@ private class ParrallelTriConvSum (
 
 }
 
+private class SerialPipelinedAdderTree(
+  dtype : UInt,
+  addLen : Int,
+  subLen : Int,
+  bitWidth : Int
+) extends Module {
+  val io = IO( new Bundle {
+    val start = Input( Bool() )
+    val posNums = Input( Vec( addLen, dtype ) )
+    val negNums = Input( Vec( subLen, dtype ) )
+    val sumOut = Output( dtype )
+    val startOut = Output( Bool() )
+  })
+
+  var plusList = io.posNums.toList.map( x => { ( x, io.start ) } )
+  var minusList = io.negNums.toList.map( x => { ( x, io.start ) } )
+
+  var stages = 0
+  while ( plusList.size > 1 || minusList.size > 0 ) {
+    val plusOps = plusList.grouped( 2 ).toList.partition( _.size > 1 )
+    plusList = plusOps._1.map( x => SerialAdder.add( x(0)._1, x(1)._1, x(0)._2, bitWidth ) )
+    val minusOps = minusList.grouped( 2 ).toList.partition( _.size > 1 )
+    minusList = minusOps._1.map( x => SerialAdder.add( x(0)._1, x(1)._1, x(0)._2, bitWidth ) )
+    if ( plusOps._2.size == 1 && minusOps._2.size == 1 ) {
+      plusList = SerialAdder.sub(
+        plusOps._2.head.head._1,
+        minusOps._2.head.head._1,
+        plusOps._2.head.head._2,
+        bitWidth
+      ) :: plusList
+    } else if ( plusOps._2.size == 1 )
+      plusList = (
+        RegNext( plusOps._2.head.head._1 ),
+        RegNext( plusOps._2.head.head._2 ) ) :: plusList
+    else if ( minusOps._2.size == 1 ) {
+      plusList = SerialAdder.sub(
+        0.U( bitWidth.W ),
+        minusOps._2.head.head._1,
+        minusOps._2.head.head._2,
+        bitWidth
+      ) :: plusList
+    }
+    stages += 1
+  }
+
+  val latency = stages
+
+  if ( plusList.size == 0 ) {
+    io.sumOut := 0.U( bitWidth.W )
+    io.startOut := true.B
+  } else {
+    io.sumOut := plusList.head._1
+    io.startOut := plusList.head._2
+  }
+}
+
 private class SerialTriConvSum (
   dtype : SInt,
   weights : Seq[Seq[Seq[Seq[Int]]]],
@@ -112,42 +168,6 @@ private class SerialTriConvSum (
   val nIter = inWidth / bitWidth
   val log2BW = log2Ceil( bitWidth )
   val log2Iter = log2Ceil( nIter )
-
-  def computeSum( posNums : Seq[UInt], negNums : Seq[UInt], startReg : Bool ) : (UInt, Bool, Int) = {
-    var plusList = posNums.toList.map( x => { ( x, startReg ) } )
-    var minusList = negNums.toList.map( x => { ( x, startReg ) } )
-
-    var stages = 0
-    while ( plusList.size > 1 || minusList.size > 0 ) {
-      val plusOps = plusList.grouped( 2 ).toList.partition( _.size > 1 )
-      plusList = plusOps._1.map( x => SerialAdder.add( x(0)._1, x(1)._1, x(0)._2, bitWidth ) )
-      val minusOps = minusList.grouped( 2 ).toList.partition( _.size > 1 )
-      minusList = minusOps._1.map( x => SerialAdder.add( x(0)._1, x(1)._1, x(0)._2, bitWidth ) )
-      if ( plusOps._2.size == 1 && minusOps._2.size == 1 ) {
-        plusList = SerialAdder.sub(
-          plusOps._2.head.head._1,
-          minusOps._2.head.head._1,
-          plusOps._2.head.head._2,
-          bitWidth
-        ) :: plusList
-      } else if ( plusOps._2.size == 1 )
-        plusList = (
-          RegNext( plusOps._2.head.head._1 ),
-          RegNext( plusOps._2.head.head._2 ) ) :: plusList
-      else if ( minusOps._2.size == 1 ) {
-        plusList = SerialAdder.sub(
-          0.U( bitWidth.W ),
-          minusOps._2.head.head._1,
-          minusOps._2.head.head._2,
-          bitWidth
-        ) :: plusList
-      }
-      stages += 1
-    }
-    if ( plusList.size == 0 )
-      return ( 0.U( bitWidth.W ), true.B, 0 )
-    return ( plusList.head._1, plusList.head._2, stages )
-  }
 
   val nibbleCntr = RegInit( 0.U( log2Iter.W ) )
   when ( nibbleCntr > 0.U || io.start ) {
@@ -211,7 +231,17 @@ private class SerialTriConvSum (
   val dataFanout = ShiftRegister( dataNibble, fanoutReg )
   val outSums = weights.map( conv => {
     val numsOut = TriConvSum.mapToWires( conv, dataFanout )
-    computeSum( numsOut._1, numsOut._2, startReg )
+    // computeSum( numsOut._1, numsOut._2, startReg )
+    val sPipeAdder = Module( new SerialPipelinedAdderTree(
+      numsOut._1.head.cloneType,
+      numsOut._1.size,
+      numsOut._2.size,
+      bitWidth
+    ))
+    sPipeAdder.io.start := startReg
+    sPipeAdder.io.posNums := Vec( numsOut._1 )
+    sPipeAdder.io.negNums := Vec( numsOut._2 )
+    ( sPipeAdder.io.sumOut, sPipeAdder.io.startOut, sPipeAdder.latency )
   })
 
   val nibbleLat = outSums.map( _._3 ).max
