@@ -253,8 +253,6 @@ class TriConvSum (
 ) {
 
   io.dataIn.ready := true.B // always ready with tput = 1
-  for ( d <- io.vldMask )
-    d := false.B
 
   val tPutRounded = math.ceil( throughput ).toInt
 

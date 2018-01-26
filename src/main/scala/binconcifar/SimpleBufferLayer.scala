@@ -61,10 +61,6 @@ class SimpleBufferLayer[ T <: SInt](
   for ( i <- 0 until io.dataIn.bits.size )
     sintOut( io.dataIn.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
 
-  // just hacky compatibility for now ...
-  for ( v <- io.vldMask )
-    v := true.B
-
   def initCounter( vld : Bool, cnt : Int ) : Bool = {
     val vldCnt = Counter( vld, cnt )
     val doneFlag = RegInit( false.B )

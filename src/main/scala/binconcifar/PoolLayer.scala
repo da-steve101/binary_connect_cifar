@@ -4,42 +4,53 @@ package binconcifar
 import chisel3._
 import chisel3.util._
 
+private class MaxOfNums(
+  dtype : SInt,
+  seqLen : Int
+) extends Module {
+
+  val io = IO( new Bundle {
+    val numsIn = Input( Vec( seqLen, dtype ) )
+    val maxOut = Output( dtype )
+  })
+
+  var maxedNums = io.numsIn.toList
+  val latency = log2Ceil( seqLen )
+
+  while ( maxedNums.size > 1 ) {
+    val toCmp = maxedNums.grouped(2).toList
+    maxedNums = toCmp.map( grp => {
+      if ( grp.size == 1 )
+        grp(0)
+      else {
+        val maxVal = Reg( dtype )
+        maxVal := grp(0)
+        when ( grp(1) >= grp(0) ) {
+          maxVal := grp(1)
+        }
+        maxVal
+      }
+    })
+  }
+
+  io.maxOut := maxedNums.head
+}
+
 /** A Max Pool something
   */
-private class MaxPool[T <: SInt]( dtype : T, kernShape : ( Int, Int, Int ) ) extends Module {
+private class MaxPool( dtype : SInt, kernShape : ( Int, Int, Int ) ) extends Module {
 
   val io = IO( new Bundle {
     val dataIn = Input(Vec( kernShape._1, Vec( kernShape._2, Vec( kernShape._3, dtype.cloneType ))))
     val dataOut = Output(Vec( kernShape._3, dtype.cloneType ))
   })
 
-  def getMax( numsToCmp : Seq[T] ) : ( T, Int ) = {
-    var maxedNums = numsToCmp.toList
-    var stages = 0
-    assert( maxedNums.size >= 1, "Must be atleast one number to find max of" )
-    while ( maxedNums.size > 1 ) {
-      val toCmp = maxedNums.grouped(2).toList
-      maxedNums = toCmp.map( grp => {
-        if ( grp.size == 1 )
-          RegNext( grp(0) )
-        else {
-          val maxVal = Reg( dtype.cloneType.cloneType )
-          maxVal := grp(0)
-          when ( grp(1) >= grp(0) ) {
-            maxVal := grp(1)
-          }
-          maxVal
-        }
-      })
-      stages += 1
-    }
-    ( maxedNums.head, stages )
-  }
-
   // for each collection, compute the max
   val paraOuts = ( 0 until kernShape._3 ).map( idx => {
     val numsToCmp = io.dataIn.reduce( (a, b) => Vec( a ++ b ) ).map( x => x(idx) )
-    getMax( numsToCmp )
+    val getMax = Module( new MaxOfNums( dtype, numsToCmp.size ) )
+    getMax.io.numsIn := Vec( numsToCmp )
+    ( getMax.io.maxOut, getMax.latency )
   })
   
   val latency = paraOuts.map( _._2 ).max
@@ -50,8 +61,8 @@ private class MaxPool[T <: SInt]( dtype : T, kernShape : ( Int, Int, Int ) ) ext
 
 }
 
-class PoolLayer[ T <: SInt](
-  val dtype : T,
+class PoolLayer(
+  val dtype : SInt,
   tput : Double,
   val kernShape : (Int, Int, Int)
 ) extends NNLayer(
@@ -63,9 +74,6 @@ class PoolLayer[ T <: SInt](
 ) {
 
   io.dataIn.ready := true.B
-
-  for ( d <- io.vldMask )
-    d := false.B
 
   var tmpLat = -1
 

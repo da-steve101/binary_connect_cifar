@@ -8,7 +8,7 @@ import scala.util.Random
 import binconcifar.Vgg7
 import scala.collection.mutable.ArrayBuffer
 
-class Vgg7Tests( c : Vgg7[SInt] ) extends PeekPokeTester( c ) {
+class Vgg7Tests( c : Vgg7 ) extends PeekPokeTester( c ) {
   val myRand = new Random
   val cycs = 10000
   val imgOutSize = c.imgOutSize

@@ -28,7 +28,6 @@ abstract class NNLayer[ T <: SInt](
   val io = IO(new Bundle {
     val dataIn = Flipped(Decoupled( Vec( inSize * noIn, dtype.cloneType ) ))
     val dataOut = Decoupled( Vec( outSize * noOut, dtype.cloneType ) )
-    val vldMask = Output( Vec( noOut, Bool() ) )
   })
 
   def latency : Int

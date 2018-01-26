@@ -7,7 +7,7 @@ import scala.util.Random
 import binconcifar.PoolLayer
 import scala.collection.mutable.ArrayBuffer
 
-class PoolComputeTests( c : PoolLayer[SInt] ) extends PeekPokeTester( c ) {
+class PoolComputeTests( c : PoolLayer ) extends PeekPokeTester( c ) {
   val myRand = new Random
   val cycs = c.latency*5
 
