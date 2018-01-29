@@ -9,7 +9,7 @@ import java.io._
 private class DenseBlackBox(
   weights : Seq[Seq[Int]],
   tPut : Int
-) extends BlackBox with HasBlackBoxResource  {
+) extends BlackBox with HasBlackBoxInline  {
 
   val uintWeights = weights.map( nums => {
     nums.grouped( tPut ).map( grp => {
@@ -88,12 +88,9 @@ module DenseBlackBox""" + hash + """(
 
   override def desiredName = "DenseBlackBox" + hash
 
-  val filename = "src/main/verilog/" + desiredName + ".v"
-  val pw = new PrintWriter(new File( filename ))
-  pw.write( module_dec )
-  pw.write( module_body )
-  pw.close
-  setResource( "/" + desiredName + ".v" )
+  setInline( "/" + desiredName + ".v",
+    module_dec + module_body
+  )
 }
 
 private class MultiplyAccumulate(
