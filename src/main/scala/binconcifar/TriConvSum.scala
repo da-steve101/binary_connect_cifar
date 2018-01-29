@@ -28,6 +28,32 @@ object TriConvSum {
     ( posNums.toSeq, negNums.toSeq )
   }
 
+  def pipelineFanout[ T <: Bits ](
+    nbl : List[Vec[Vec[Vec[T]]]],
+    noReg : Int,
+    noOut : Int ) : List[Vec[Vec[Vec[T]]]] = {
+    val noInLyr = ( 1 to noReg ).map( n => {
+      math.round( math.exp( math.log( noOut ) * n / noReg ) ).toInt
+    }).toList
+    val nblLyrs = ArrayBuffer[List[Vec[Vec[Vec[T]]]]]()
+    nblLyrs += nbl
+    for ( n <- noInLyr ) {
+      val lastLyr = nblLyrs.last
+      val fanout = ( n / lastLyr.size ).toInt
+      val fanouts = ( 0 until lastLyr.size ).map( i => {
+        if ( i >= n % lastLyr.size )
+          fanout
+        else
+          fanout + 1
+      }).toList
+      val newLyr = fanouts.zipWithIndex.map( f => {
+        List.fill( f._1 ) { RegNext( lastLyr( f._2 ) ) }
+      }).toList.reduce( _ ++ _ )
+      nblLyrs += newLyr
+    }
+    nblLyrs.last
+  }
+
 }
 
 private class ParrallelTriConvSum (
@@ -83,17 +109,20 @@ private class ParrallelTriConvSum (
     return ( plusList.head, stages, opsTotal )
   }
 
-  val currData = io.dataIn
+  val fanoutReg = 2
+  val currData = ShiftRegister( io.dataIn, fanoutReg )
+
   val outSums = weights.map( conv => {
-    val numsOut = TriConvSum.mapToWires( conv, io.dataIn )
+    val numsOut = TriConvSum.mapToWires( conv, currData )
     val res = computeSum( numsOut._1, numsOut._2 )
     ( res._1, res._2 )
   })
 
-  val latency = outSums.map( _._2 ).max
+  val outSumLat = outSums.map( _._2 ).max
 
-  io.dataOut := Vec( outSums.map( r => ShiftRegister( r._1, latency - r._2 )) )
+  io.dataOut := Vec( outSums.map( r => ShiftRegister( r._1, outSumLat - r._2 )) )
 
+  val latency = outSumLat + fanoutReg
 }
 
 private class SerialPipelinedAdderTree(
@@ -195,30 +224,8 @@ private class SerialTriConvSum (
     }
   }
 
-  def pipelineFanout( nbl : List[Vec[Vec[Vec[UInt]]]], noReg : Int, noOut : Int ) : List[Vec[Vec[Vec[UInt]]]] = {
-    val noInLyr = ( 1 to noReg ).map( n => {
-      math.round( math.exp( math.log( noOut ) * n / noReg ) ).toInt
-    }).toList
-    val nblLyrs = ArrayBuffer[List[Vec[Vec[Vec[UInt]]]]]()
-    nblLyrs += nbl
-    for ( n <- noInLyr ) {
-      val lastLyr = nblLyrs.last
-      val fanout = ( n / lastLyr.size ).toInt
-      val fanouts = ( 0 until lastLyr.size ).map( i => {
-        if ( i >= n % lastLyr.size )
-          fanout
-        else
-          fanout + 1
-      }).toList
-      val newLyr = fanouts.zipWithIndex.map( f => {
-        List.fill( f._1 ) { RegNext( lastLyr( f._2 ) ) }
-      }).toList.reduce( _ ++ _ )
-      nblLyrs += newLyr
-    }
-    nblLyrs.last
-  }
 
-  val fanoutReg = 2
+  val fanoutReg = 4
   val startReg = ShiftRegister( io.start, fanoutReg + 1 )
 
   /*
