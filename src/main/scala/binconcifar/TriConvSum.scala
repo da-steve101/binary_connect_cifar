@@ -58,7 +58,8 @@ object TriConvSum {
 
 private class ParrallelTriConvSum (
   dtype : SInt,
-  weights : Seq[Seq[Seq[Seq[Int]]]]
+  weights : Seq[Seq[Seq[Seq[Int]]]],
+  fanoutReg : Int
 ) extends Module {
 
   val io = IO( new Bundle {
@@ -109,7 +110,6 @@ private class ParrallelTriConvSum (
     return ( plusList.head, stages, opsTotal )
   }
 
-  val fanoutReg = 2
   val currData = ShiftRegister( io.dataIn, fanoutReg )
 
   val outSums = weights.map( conv => {
@@ -184,7 +184,8 @@ private class SerialPipelinedAdderTree(
 private class SerialTriConvSum (
   dtype : SInt,
   weights : Seq[Seq[Seq[Seq[Int]]]],
-  bitWidth : Int
+  bitWidth : Int,
+  fanoutReg : Int
 ) extends Module {
 
   val io = IO( new Bundle {
@@ -224,9 +225,43 @@ private class SerialTriConvSum (
     }
   }
 
-
-  val fanoutReg = 4
   val startReg = ShiftRegister( io.start, fanoutReg + 1 )
+
+  def computeSum( posNums : Seq[UInt], negNums : Seq[UInt], startReg : Bool ) : (UInt, Bool, Int) = {
+    var plusList = posNums.toList.map( x => { ( x, startReg ) } )
+    var minusList = negNums.toList.map( x => { ( x, startReg ) } )
+
+    var stages = 0
+    while ( plusList.size > 1 || minusList.size > 0 ) {
+      val plusOps = plusList.grouped( 2 ).toList.partition( _.size > 1 )
+      plusList = plusOps._1.map( x => SerialAdder.add( x(0)._1, x(1)._1, x(0)._2, bitWidth ) )
+      val minusOps = minusList.grouped( 2 ).toList.partition( _.size > 1 )
+      minusList = minusOps._1.map( x => SerialAdder.add( x(0)._1, x(1)._1, x(0)._2, bitWidth ) )
+      if ( plusOps._2.size == 1 && minusOps._2.size == 1 ) {
+        plusList = SerialAdder.sub(
+          plusOps._2.head.head._1,
+          minusOps._2.head.head._1,
+          plusOps._2.head.head._2,
+          bitWidth
+        ) :: plusList
+      } else if ( plusOps._2.size == 1 )
+        plusList = (
+          RegNext( plusOps._2.head.head._1 ),
+          RegNext( plusOps._2.head.head._2 ) ) :: plusList
+      else if ( minusOps._2.size == 1 ) {
+        plusList = SerialAdder.sub(
+          0.U( bitWidth.W ),
+          minusOps._2.head.head._1,
+          minusOps._2.head.head._2,
+          bitWidth
+        ) :: plusList
+      }
+      stages += 1
+    }
+    if ( plusList.size == 0 )
+      return ( 0.U( bitWidth.W ), true.B, 0 )
+    return ( plusList.head._1, plusList.head._2, stages )
+  }
 
   /*
   val dataFanout = pipelineFanout( List(dataNibble), fanoutReg, weights.size )
@@ -238,7 +273,8 @@ private class SerialTriConvSum (
   val dataFanout = ShiftRegister( dataNibble, fanoutReg )
   val outSums = weights.map( conv => {
     val numsOut = TriConvSum.mapToWires( conv, dataFanout )
-    // computeSum( numsOut._1, numsOut._2, startReg )
+    computeSum( numsOut._1, numsOut._2, startReg )
+    /*
     val sPipeAdder = Module( new SerialPipelinedAdderTree(
       numsOut._1.head.cloneType,
       numsOut._1.size,
@@ -249,6 +285,7 @@ private class SerialTriConvSum (
     sPipeAdder.io.posNums := Vec( numsOut._1 )
     sPipeAdder.io.negNums := Vec( numsOut._2 )
     ( sPipeAdder.io.sumOut, sPipeAdder.io.startOut, sPipeAdder.latency )
+     */
   })
 
   val nibbleLat = outSums.map( _._3 ).max
@@ -280,7 +317,8 @@ private class SerialTriConvSum (
 class TriConvSum (
   val dtype : SInt,
   val weights : Seq[Seq[Seq[Seq[Int]]]],
-  tput : Double
+  tput : Double,
+  fanoutReg :Int = 2
 ) extends NNLayer(
   dtype,
   math.ceil( tput ),
@@ -311,14 +349,14 @@ class TriConvSum (
   val dataVec = ShiftRegister( inIOToVVV( weights(0)(0).size, weights(0)(0)(0).size ), noDelayReg )
   val convRes = ( 0 until tPutRounded ).map( idx => {
     if ( bitWidth < inWidth ) {
-      val pConv = Module( new SerialTriConvSum( dtype, weights, bitWidth ) )
+      val pConv = Module( new SerialTriConvSum( dtype, weights, bitWidth, fanoutReg ) )
       pConv.io.start := startReg
       pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
         dataVec( wIdx + weights(0).size * idx )
       }))
       ( pConv.io.dataOut, pConv.latency )
     } else {
-      val pConv = Module( new ParrallelTriConvSum( dtype, weights ) )
+      val pConv = Module( new ParrallelTriConvSum( dtype, weights, 0 ) )
       pConv.io.dataIn := Vec( ( 0 until weights(0).size ).map( wIdx => {
         dataVec( wIdx + weights(0).size * idx )
       }))
