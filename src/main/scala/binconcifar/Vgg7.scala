@@ -34,7 +34,7 @@ class Vgg7( dtype : SInt ) extends Module {
     imgSize : Int,
     noFilt : Int,
     outFormat : ( Int, Int, Int ),
-    fanoutReg : Int
+    fanoutReg : Int,
     noFifo : Boolean = false
   ) : DecoupledIO[Vec[SInt]] = {
 
