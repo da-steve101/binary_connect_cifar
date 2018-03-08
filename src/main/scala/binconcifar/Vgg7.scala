@@ -12,13 +12,13 @@ class Vgg7( dtype : SInt ) extends Module {
   val tPutPart1Int = math.max( tPut, 1 ).toInt
   val tPutOut = 1 //tPut / 4
   val imgSize = 32
-  val imgOutSize = imgSize / 8
+  val imgOutSize = imgSize / 2
   // val dtype = SInt( 16.W )
   // type T = dtype.type
   val fracBits = 4
   val abFracBits = 6
   val inGrp = 3
-  val noOut = 256
+  val noOut = 64
   val latency = 32 // just some bs for now
   val noIn = tPutPart1Int
 
@@ -26,6 +26,50 @@ class Vgg7( dtype : SInt ) extends Module {
     val dataIn : DecoupledIO[Vec[SInt]] = Flipped(Decoupled( Vec( tPutPart1Int * inGrp, dtype ) ))
     val dataOut : DecoupledIO[Vec[SInt]] = Decoupled( Vec( tPutOut * noOut, dtype.cloneType ) )
   })
+
+  def createSparseMulLyr(
+    idx : Int,
+    inputVec : DecoupledIO[Vec[SInt]],
+    tPutLyr : Double,
+    imgSize : Int,
+    noFilt : Int,
+    outFormat : ( Int, Int, Int ),
+    fanoutReg : Int,
+    noFifo : Boolean = false
+  ) : DecoupledIO[Vec[SInt]] = {
+
+    val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_op_list.csv" )
+    val data_src = bufferedSource.getLines.toList
+    val data_ints = data_src.map( _.split(",").toList.map( x => {
+      x.toInt
+    }))
+
+    val outputIdxs = data_ints.head.toList
+    val treeDefinition = data_ints.tail.toList
+
+    val bufferedSource_ab = scala.io.Source.fromFile("src/main/resources/conv" + idx + "_ab.csv")
+    val ab_raw = bufferedSource_ab.getLines.toList
+    val ab = ab_raw.map( _.split(",").toList.map( x => math.round( x.toFloat * ( 1 << abFracBits ) ).toInt ) )
+
+    val tPutInt = math.max( tPutLyr, 1 ).toInt
+    val blMod = Module( new SimpleBufferLayer( dtype, imgSize, outFormat._3, outFormat, 10, 1, true, tPutInt, noFifo = noFifo ) )
+    //  val conv1 = Module( new TriConvSum( dtype, weights_trans, tPutLyr, fanoutReg ) )
+    val conv1 = Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
+
+    val scaleShift = Module( new ScaleAndShift(
+      dtype,
+      fracBits,
+      abFracBits,
+      ab(0)take( noFilt ),
+      ab(1).take( noFilt ),
+      tPutInt
+    ) )
+
+    blMod.io.dataIn <> inputVec
+    conv1.io.dataIn <> blMod.io.dataOut
+    scaleShift.io.dataIn <> conv1.io.dataOut
+    scaleShift.io.dataOut
+  }
 
   def createConvLyr(
     idx : Int,
@@ -137,7 +181,8 @@ class Vgg7( dtype : SInt ) extends Module {
     dcpOut
   }
 
-  val lyr1 = createConvLyr( 1, io.dataIn, tPut, imgSize, 64, ( 3, 3, 3 ), 0, true )
+  // val lyr1 = createConvLyr( 1, io.dataIn, tPut, imgSize, 64, ( 3, 3, 3 ), 0, true )
+  val lyr1 = createSparseMulLyr( 1, io.dataIn, tPut, imgSize, 64, ( 3, 3, 3 ), 0, true )
   val lyr1Rev = reverseOrder( lyr1, tPutPart1Int )
   val lyr2 = createConvLyr( 2, lyr1Rev, tPut, imgSize, 64, ( 3, 3, 64 ), 0, true )
   val lyr2Rev = reverseOrder( lyr2, tPutPart1Int )
