@@ -35,21 +35,24 @@ class SparseMatMul(
 
   for ( op <- treeDefinition ) {
     if ( op(2) >= 0 ) {
+      val a = treeNodes( op(1) ) << op(4).U
+      val b = treeNodes( op(2) ) << op(5).U
       if ( op(3) == 1 )
-        treeNodes( op(0) ) := RegNext( treeNodes( op(1) ) + treeNodes( op(2) ) )
+        treeNodes( op(0) ) := RegNext( a + b )
       else if ( op(3) == 0 )
-        treeNodes( op(0) ) := RegNext( treeNodes( op(1) ) - treeNodes( op(2) ) )
+        treeNodes( op(0) ) := RegNext( a - b )
       else
-        treeNodes( op(0) ) := RegNext( - treeNodes( op(1) ) - treeNodes( op(2) ) )
+        treeNodes( op(0) ) := RegNext( - a - b )
       Predef.assert( nodeDelays( op(1) ) == nodeDelays( op(2) ),
         "Tree adds values from different layers for op: " + op )
       nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
     } else {
       if ( op(1) >= 0 ) {
+        val a = treeNodes( op(1) ) << op(4).U
         if ( op(3) == 1 )
-          treeNodes( op(0) ) := RegNext( treeNodes( op(1) ) )
+          treeNodes( op(0) ) := RegNext( a )
         else
-          treeNodes( op(0) ) := -RegNext( treeNodes( op(1) ) )
+          treeNodes( op(0) ) := RegNext( - a )
         nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
       } else {
         treeNodes( op(0) ) := 0.S( 16.W )
@@ -67,7 +70,7 @@ class SparseMatMul(
 
   val latency = outputs.map( _._2 ).max
 
-  io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency )
+  io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency, false.B, true.B )
 
   val outputsAligned = outputs.map( x => {
     if ( x._2 < 0 )

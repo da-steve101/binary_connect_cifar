@@ -29,17 +29,19 @@ class SparseMatMulTests( c : SparseMatMul ) extends PeekPokeTester( c ) {
           treeNodes( op(0) ) = 0
         else {
           if ( op( 3 ) == 1 )
-            treeNodes( op(0) ) = treeNodes( op(1) )
+            treeNodes( op(0) ) = treeNodes( op(1) ) << op(4)
           else
-            treeNodes( op(0) ) = -treeNodes( op(1) )
+            treeNodes( op(0) ) = -( treeNodes( op(1) ) << op(4) )
         }
       } else {
+        val a = treeNodes( op(1) ) << op(4)
+        val b = treeNodes( op(2) ) << op(5)
         if ( op( 3 ) == 1 )
-          treeNodes( op(0) ) = treeNodes( op(1) ) + treeNodes( op(2) )
+          treeNodes( op(0) ) = a + b
         else if ( op( 3 ) == 0 )
-          treeNodes( op(0) ) = treeNodes( op(1) ) - treeNodes( op(2) )
+          treeNodes( op(0) ) = a - b
         else
-          treeNodes( op(0) ) = - treeNodes( op(1) ) - treeNodes( op(2) )
+          treeNodes( op(0) ) = - a - b
       }
     }
     c.outputIdxs.map( i => {

@@ -53,7 +53,6 @@ class Vgg7( dtype : SInt ) extends Module {
 
     val tPutInt = math.max( tPutLyr, 1 ).toInt
     val blMod = Module( new SimpleBufferLayer( dtype, imgSize, outFormat._3, outFormat, 10, 1, true, tPutInt, noFifo = noFifo ) )
-    //  val conv1 = Module( new TriConvSum( dtype, weights_trans, tPutLyr, fanoutReg ) )
     val conv1 = Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
 
     val scaleShift = Module( new ScaleAndShift(
@@ -66,7 +65,10 @@ class Vgg7( dtype : SInt ) extends Module {
     ) )
 
     blMod.io.dataIn <> inputVec
-    conv1.io.dataIn <> blMod.io.dataOut
+    val modOrder = Vec( blMod.io.dataOut.bits.grouped(outFormat._3).toList.reverse.reduce( _ ++ _ ) )
+    conv1.io.dataIn.bits := modOrder
+    conv1.io.dataIn.valid := blMod.io.dataOut.valid
+    blMod.io.dataOut.ready := conv1.io.dataIn.ready
     scaleShift.io.dataIn <> conv1.io.dataOut
     scaleShift.io.dataOut
   }
@@ -188,8 +190,8 @@ class Vgg7( dtype : SInt ) extends Module {
   val lyr2Rev = reverseOrder( lyr2, tPutPart1Int )
   val mp1 = createPoolLyr( lyr2Rev, tPutPart1Int, imgSize, ( 2, 2, 64 ) )
 
-  // io.dataOut <> mp1
-
+  io.dataOut <> mp1
+  /*
   val tPutPart2 = tPut / 4
   val tPutPart2Int = math.max( tPutPart2, 1 ).toInt
   val mp1Rev = reverseOrder( mp1, tPutPart2Int )
@@ -214,4 +216,5 @@ class Vgg7( dtype : SInt ) extends Module {
   val lyr6Rev = reverseOrder( lyr6, tPutPart3Int )
   val mp3 = createPoolLyr( lyr6Rev, tPutPart3Int, imgSizePart3, ( 2, 2, 256 ) )
   io.dataOut <> mp3
+   */
 }

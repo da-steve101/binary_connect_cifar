@@ -50,14 +50,14 @@ def transform_to_op_list( vals, no_inputs ):
             a_idx = op_codes[a_code]
             b_idx = op_codes[b_code]
             curr_idx = len(op_codes) - 1
-            op_new = [ curr_idx, a_idx, b_idx, is_add ]
+            op_new = [ curr_idx, a_idx, b_idx, is_add, op[5], op[8] ]
             op_list += [ op_new ]
             op_codes[out_code] = curr_idx
         elif op[0] == 'R':
             out_code, in_code, is_negate = get_reg_op_codes( op, op_codes )
             in_idx = op_codes[in_code]
             curr_idx = len(op_codes) - 1
-            op_new = [ curr_idx, in_idx, -1, is_negate ]
+            op_new = [ curr_idx, in_idx, -1, is_negate, 0, 0 ]
             op_list += [ op_new ]
             op_codes[out_code] = curr_idx
         elif op[0] == 'O':
@@ -99,7 +99,18 @@ if __name__ == "__main__":
                        for code, neg_code in zip( output_codes, output_codes_neg ) ]
     # change op_list to negate the outputs
     for idx, neg in output_ordered:
-        op_list[ idx - no_inputs - 1 ][-1] = -1
+        if idx >= no_inputs and neg:
+            if op_list[ idx - no_inputs ][3] == 1:
+                op_list[ idx - no_inputs ][3] = -1
+            else:
+                # need to swap order
+                tmp = op_list[ idx - no_inputs ][1]
+                op_list[ idx - no_inputs ][1] = op_list[ idx - no_inputs ][2]
+                op_list[ idx - no_inputs ][2] = tmp
+                tmp = op_list[ idx - no_inputs ][4]
+                op_list[ idx - no_inputs ][4] = op_list[ idx - no_inputs ][5]
+                op_list[ idx - no_inputs ][5] = tmp
+    # output_ordered.reverse()
     tmp = wrt.writerow( [ x[0] for x in output_ordered ] )
     for op in op_list:
         tmp = wrt.writerow( op )
