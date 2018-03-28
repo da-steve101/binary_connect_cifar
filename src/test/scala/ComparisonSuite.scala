@@ -16,17 +16,18 @@ class ComparisonModule extends Module {
   val outSize = 64
   val dtype = SInt( 16.W )
   val outFormat = ( 3, 3, 3 )
-  val noFilt = 64
   val tPutLyr = 1
   val fanoutReg = 1
 
   val io = IO( new Bundle {
     val dataIn = Flipped( Valid( Vec( inSize, dtype ) ) )
-    val dataOut_s = Valid( Vec( noFilt, dtype ) )
-    val dataOut_orig = Valid( Vec( noFilt, dtype ) )
+    val dataOut_s = Valid( Vec( outSize, dtype ) )
+    val dataOut_orig = Valid( Vec( outSize, dtype ) )
   })
 
-  val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_op_list.csv" )
+  // val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_tern_op_list.csv" )
+  // val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_op_list.csv" )
+  val bufferedSource = scala.io.Source.fromFile("src/main/resources/conv" + idx + "_tern_op_list.csv" )
   val data_src = bufferedSource.getLines.toList
   val data_ints = data_src.map( _.split(",").toList.map( x => {
     x.toInt
@@ -40,7 +41,7 @@ class ComparisonModule extends Module {
   val weights = weights_raw.map( _.split(",").toList.map( x => {
     x.toInt
   }) ).grouped( outFormat._3 ).toList.grouped( outFormat._2 ).toList
-  val weights_trans = ( 0 until noFilt ).toList.map( i =>
+  val weights_trans = ( 0 until outSize ).toList.map( i =>
     weights.map( w0 => w0.map( w1 => w1.map( w2 => w2(i) ) ) )
   ).map( x => x.map( _.reverse ).reverse )
 
@@ -55,10 +56,10 @@ class ComparisonModule extends Module {
   conv_orig.io.dataIn.bits := io.dataIn.bits
   conv_orig.io.dataIn.valid := io.dataIn.valid
 
-  io.dataOut_s.bits := conv_s.io.dataOut.bits
+  io.dataOut_s.bits := Vec( conv_s.io.dataOut.bits.take( outSize ) )
   io.dataOut_s.valid := conv_s.io.dataOut.valid
   conv_s.io.dataOut.ready := true.B
-  io.dataOut_orig.bits := conv_orig.io.dataOut.bits
+  io.dataOut_orig.bits := Vec( conv_orig.io.dataOut.bits.take( outSize ) )
   io.dataOut_orig.valid := conv_orig.io.dataOut.valid
   conv_orig.io.dataOut.ready := true.B
 
@@ -75,9 +76,10 @@ class ComparisonTests( c : ComparisonModule ) extends PeekPokeTester( c ) {
     BigInt( math.round( x * ( 1 << 3 ) ).toInt )
   }
 
-  val img = List.fill( cycs ) {
+
+  val img = ( 0 until cycs ).toList.map( x => {
     List.fill( c.inSize ) { getRndFP() }
-  }
+  })
 
   val sparse_res = ArrayBuffer[List[BigInt]]()
   val orig_res = ArrayBuffer[List[BigInt]]()

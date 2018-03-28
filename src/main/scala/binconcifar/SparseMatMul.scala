@@ -33,34 +33,57 @@ class SparseMatMul(
   for ( d <- io.dataIn.bits.zipWithIndex )
     treeNodes( d._2 ) := d._1
 
-  for ( op <- treeDefinition ) {
-    if ( op(2) >= 0 ) {
-      val a = treeNodes( op(1) ) << op(4).U
-      val b = treeNodes( op(2) ) << op(5).U
-      if ( op(3) == 1 )
-        treeNodes( op(0) ) := RegNext( a + b )
-      else if ( op(3) == 0 )
-        treeNodes( op(0) ) := RegNext( a - b )
-      else
-        treeNodes( op(0) ) := RegNext( - a - b )
-      Predef.assert( nodeDelays( op(1) ) == nodeDelays( op(2) ),
-        "Tree adds values from different layers for op: " + op )
-      nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
-    } else {
-      if ( op(1) >= 0 ) {
-        val a = treeNodes( op(1) ) << op(4).U
-        if ( op(3) == 1 )
-          treeNodes( op(0) ) := RegNext( a )
-        else
-          treeNodes( op(0) ) := RegNext( - a )
-        nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
-      } else {
-        treeNodes( op(0) ) := 0.S( 16.W )
-        nodeDelays( op(0) ) = 0
-      }
-    }
+  def compute_op( op_code : Int, a : SInt, b : SInt, c : SInt ) : SInt = {
+    if ( op_code == 0 )
+      return - a - b - c
+    if ( op_code == 1 )
+      return - a - b + c
+    if ( op_code == 2 )
+      return - a + b - c
+    if ( op_code == 3 )
+      return - a + b + c
+    if ( op_code == 4 )
+      return a - b - c
+    if ( op_code == 5 )
+      return a - b + c
+    if ( op_code == 6 )
+      return a + b - c
+    return a + b + c
   }
 
+  def compute_op_with_ternary_vhd( op_code : Int, a : SInt, b : SInt, c : SInt ) : SInt = {
+    val sub_a = op_code < 4
+    val sub_b = ( op_code % 4 ) < 2
+    val sub_c = ( op_code % 2 ) < 1
+    ternary_add_sub_prim.make_three_input_add_sub_sim(
+      16, clock, a, b, c, sub_a, sub_b, sub_c
+    )
+  }
+
+  def get_shift_val( op_idx : Int, shift_no : Int ) : SInt = {
+    if ( op_idx < 0 )
+      return 0.S
+    if ( shift_no >= 0 )
+      return treeNodes( op_idx ) << shift_no.U
+    return treeNodes( op_idx ) >> ( - shift_no ).U
+  }
+
+  for ( op <- treeDefinition ) {
+    val a = get_shift_val( op(1), op(5) )
+    val b = get_shift_val( op(2), op(6) )
+    val c = get_shift_val( op(3), op(7) )
+    treeNodes( op(0) ) := {
+      if ( op(2) >= 0 && op(3) >= 0 )
+        compute_op_with_ternary_vhd( op(4), a, b, c )
+      else
+        RegNext( compute_op( op(4), a, b, c ) )
+    }
+
+    Predef.assert( ( op(2) < 0 || nodeDelays( op(1) ) == nodeDelays( op(2) ) ) &&
+      ( op(3) < 0 || nodeDelays( op(1) ) == nodeDelays( op(3) ) ),
+      "Tree adds values from different layers for op: " + op )
+    nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
+  }
   val outputs = outputIdxs.map( i => {
     if ( i < 0 )
       ( 0.S( 16.W ), -1 )
