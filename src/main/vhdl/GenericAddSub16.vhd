@@ -234,7 +234,7 @@ architecture arch of Xilinx_GenericAddSub_16_fixed_01 is
              sum_out : out  std_logic_vector(3 downto 0)   );
    end component;
 
-signal carry :  std_logic_vector(4 downto 0);
+signal carry_0, carry_1, carry_2, carry_3 :  std_logic;
 signal sum_t :  std_logic_vector(15 downto 0);
 signal x :  std_logic_vector(15 downto 0);
 signal y :  std_logic_vector(15 downto 0);
@@ -243,38 +243,38 @@ begin
    y(15 downto 0) <= y_i;
    slice_0: Xilinx_GenericAddSub_16_fixed_01_slice4_init
       port map ( carry_in => '1',
-                 carry_out => carry(0 downto 0),
+                 carry_out => carry_0,
                  neg_x_in => '0',
                  neg_y_in => '1',
                  sum_out => sum_t(3 downto 0),
                  x_in => x(3 downto 0),
                  y_in => y(3 downto 0));
    slice_1: Xilinx_GenericAddSub_16_fixed_01_slice4
-      port map ( carry_in => carry(0 downto 0),
-                 carry_out => carry(1 downto 1),
+      port map ( carry_in => carry_0,
+                 carry_out => carry_1,
                  neg_x_in => '0',
                  neg_y_in => '1',
                  sum_out => sum_t(7 downto 4),
                  x_in => x(7 downto 4),
                  y_in => y(7 downto 4));
    slice_2: Xilinx_GenericAddSub_16_fixed_01_slice4
-      port map ( carry_in => carry(1 downto 1),
-                 carry_out => carry(2 downto 2),
+      port map ( carry_in => carry_1,
+                 carry_out => carry_2,
                  neg_x_in => '0',
                  neg_y_in => '1',
                  sum_out => sum_t(11 downto 8),
                  x_in => x(11 downto 8),
                  y_in => y(11 downto 8));
    slice_3: Xilinx_GenericAddSub_16_fixed_01_slice4
-      port map ( carry_in => carry(2 downto 2),
-                 carry_out => carry(3 downto 3),
+      port map ( carry_in => carry_2,
+                 carry_out => carry_3,
                  neg_x_in => '0',
                  neg_y_in => '1',
                  sum_out => sum_t(15 downto 12),
                  x_in => x(15 downto 12),
                  y_in => y(15 downto 12));
    sum_o <= sum_t(15 downto 0);
-   c_o <= carry(4);
+   c_o <= carry_3;
 end architecture;
 
 --------------------------------------------------------------------------------
