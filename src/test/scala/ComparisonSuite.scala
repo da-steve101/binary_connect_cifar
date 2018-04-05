@@ -12,7 +12,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class ComparisonModule extends Module {
 
-  val idx = 2
+  val idx = 1
   val inSize = 3*3* {
     if ( idx == 1 )
       3
@@ -33,7 +33,7 @@ class ComparisonModule extends Module {
   }
   val dtype = SInt( 16.W )
   val outFormat = ( 3, 3, 3 )
-  val tPutLyr = 0.25
+  val tPutLyr = 1
   val fanoutReg = 1
 
   val io = IO( new Bundle {
@@ -62,7 +62,8 @@ class ComparisonModule extends Module {
     weights.map( w0 => w0.map( w1 => w1.map( w2 => w2(i) ) ) )
   ).map( x => x.map( _.reverse ).reverse )
 
-  val conv_s = Module( new SparseMatMulSerial( dtype, treeDefinition, outputIdxs, 4 ) )
+  val conv_s = Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
+  // val conv_s = Module( new SparseMatMulSerial( dtype, treeDefinition, outputIdxs, 4 ) )
 
   val conv_orig = Module( new TriConvSum( dtype, weights_trans, tPutLyr, fanoutReg ) )
 

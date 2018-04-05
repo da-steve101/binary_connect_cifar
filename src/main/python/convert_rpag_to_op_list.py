@@ -82,7 +82,6 @@ def transform_to_op_list( vals, no_inputs ):
             op_list += [ op_new ]
             op_codes[out_code] = curr_idx
         elif op[0] == 'O':
-            print( op )
             out_code, is_neg = get_output_op_code( op, op_codes )
             assert not is_neg, "Cant be neg on output"
             out_idx = op_codes[ out_code ]
@@ -102,6 +101,24 @@ def parse_graph( lines ):
     lines[-1] = lines[-1].split( "}}" )[0]
     return [ parse_line( line ) for line in lines ]
 
+def move_neg_shifts( op_list, output_idx ):
+    # move all neg shifts to the last layer
+    op_list_new = []
+    shifted_inputs = {}
+    for op in op_list:
+        cnt = 0
+        for idx, shift in [ ( op[1], 5 ), ( op[2], 6 ), ( op[3], 7 ) ]:
+            if idx in shifted_inputs:
+                op[shift] += shifted_inputs[idx]
+        if op[0] not in output_idx:
+            while op[5] < 0 or op[6] < 0 or op[7] < 0:
+                op = op[:5] + [ op[5] + 1, op[6] + 1, op[7] + 1 ]
+                cnt += 1
+        op_list_new += [ op ]
+        if cnt > 0:
+            shifted_inputs[op[0]] = -cnt
+    return op_list_new
+
 if __name__ == "__main__":
     fname = "../resources/cifar_layer1.rpag"
     matname = "../resources/conv1_weights.csv"
@@ -110,6 +127,7 @@ if __name__ == "__main__":
     vals = parse_graph( lines )
     no_inputs = len(vals[0][1])
     op_list, output_idxs = transform_to_op_list( vals, no_inputs )
+    op_list = move_neg_shifts( op_list, set(output_idxs) )
     f = open( matname )
     rdr = csv.reader( f )
     mat = [ [ int(x) for x in y ] for y in rdr ]
