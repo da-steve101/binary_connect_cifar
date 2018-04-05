@@ -6,17 +6,34 @@ import chisel3.util._
 import chisel3.iotesters.{PeekPokeTester, Driver, ChiselFlatSpec}
 import scala.util.Random
 import binconcifar.SparseMatMul
+import binconcifar.SparseMatMulSerial
 import binconcifar.TriConvSum
 import scala.collection.mutable.ArrayBuffer
 
 class ComparisonModule extends Module {
 
-  val idx = 1
-  val inSize = 27
-  val outSize = 64
+  val idx = 2
+  val inSize = 3*3* {
+    if ( idx == 1 )
+      3
+    else if ( idx == 2 || idx == 3 )
+      64
+    else if ( idx == 4 || idx == 5 )
+      128
+    else
+      256
+  }
+  val outSize = {
+    if ( idx == 1 || idx == 2 )
+      64
+    else if ( idx == 3 || idx == 4 )
+      128
+    else
+      256
+  }
   val dtype = SInt( 16.W )
   val outFormat = ( 3, 3, 3 )
-  val tPutLyr = 1
+  val tPutLyr = 0.25
   val fanoutReg = 1
 
   val io = IO( new Bundle {
@@ -45,7 +62,7 @@ class ComparisonModule extends Module {
     weights.map( w0 => w0.map( w1 => w1.map( w2 => w2(i) ) ) )
   ).map( x => x.map( _.reverse ).reverse )
 
-  val conv_s = Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
+  val conv_s = Module( new SparseMatMulSerial( dtype, treeDefinition, outputIdxs, 4 ) )
 
   val conv_orig = Module( new TriConvSum( dtype, weights_trans, tPutLyr, fanoutReg ) )
 

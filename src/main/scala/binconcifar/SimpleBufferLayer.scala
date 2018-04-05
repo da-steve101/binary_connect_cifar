@@ -166,7 +166,7 @@ class SimpleBufferLayer[ T <: SInt](
               ( isBot, colCntrFirst ),  // pad bot
               ( isTop, colCntrLast )    // pad top
             )
-            val padIt = padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ )
+            val padIt = padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ ) // Crit path here ...
             when ( padIt && ready ) {
               grpVec := zeroGrp
             }

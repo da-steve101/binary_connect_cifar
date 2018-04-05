@@ -56,7 +56,7 @@ def update_matrix( matrix, idxs_pos, idxs_neg, pattern ):
     # add new row to matrix
     matrix = np.vstack( [ matrix, pattern ] )
     # add new col to matrix
-    matrix = np.hstack( [ matrix, np.zeros( ( matrix.shape[0], 1 ), dtype = np.int8 ) ] )
+    matrix = np.hstack( [ matrix, np.zeros( ( matrix.shape[0], 1 ), dtype = np.int16 ) ] )
     for i in idxs_pos:
         matrix[i,-1] = 1
     for i in idxs_neg:
@@ -117,7 +117,7 @@ def make_tree( matrix, no_in, no_out ):
     output_depths = {}
     outputs = {}
     op_list = []
-    op_idx = 27
+    op_idx = no_in
     while len( outputs ) < matrix.shape[1]:
         for x in dependancies:
             if x not in outputs:
@@ -170,7 +170,7 @@ if __name__ == "__main__":
     f = open( "../resources/conv" + str(conv_idx) + "_weights.csv" )
     rdr = csv.reader( f )
     data = [ [ int(y) for y in x ] for x in rdr ]
-    matrix = np.transpose( np.array( data, dtype = np.int8 ) )
+    matrix = np.transpose( np.array( data, dtype = np.int16 ) )
     no_in = matrix.shape[1]
     no_out = matrix.shape[0]
     initial_no_adds = size_of_tree( matrix )
