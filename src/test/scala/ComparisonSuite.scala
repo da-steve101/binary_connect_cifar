@@ -42,9 +42,9 @@ class ComparisonModule extends Module {
     val dataOut_orig = Valid( Vec( outSize, dtype ) )
   })
 
-  // val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_tern_op_list.csv" )
+  val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_tern_op_list.csv" )
   // val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_op_list.csv" )
-  val bufferedSource = scala.io.Source.fromFile("src/main/resources/conv" + idx + "_tern_op_list.csv" )
+  // val bufferedSource = scala.io.Source.fromFile("src/main/resources/conv" + idx + "_tern_op_list.csv" )
   val data_src = bufferedSource.getLines.toList
   val data_ints = data_src.map( _.split(",").toList.map( x => {
     x.toInt
