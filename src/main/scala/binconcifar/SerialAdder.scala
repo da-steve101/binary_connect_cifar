@@ -68,31 +68,32 @@ class SerialAdder( add : Boolean, bitWidth : Int, negate : Boolean = false ) ext
     if ( !negate )
       0.U( 1.W ) ## io.a
     else
-      1.U( 1.W ) ## ~io.a
+      0.U( 2.W ) ## ~io.a
   }
   val carry_init = {
-    if ( add )
+    if ( add && !negate )
       0.U( 1.W )
     else if ( negate )
       2.U( 2.W )
     else
       1.U( 1.W )
   }
-  val carry_in = Reg( 0.U( 1.W ).cloneType )
-  val tmp = Wire( UInt( ( 1 + bitWidth ).W ) )
+  val carry_in = Reg( carry_init.cloneType )
+  val tmp = Wire( aPad.cloneType )
 
   val carry_use = Wire( carry_init.cloneType )
-  if ( negate )
-    carry_use := 0.U( 1.W ) ## carry_in
-  else
-    carry_use := carry_in
+  carry_use := carry_in
   when ( io.start ) {
     carry_use := carry_init
   }
 
   tmp := ( aPad + bInv ) + carry_use
 
-  carry_in := tmp(bitWidth)
+  if ( negate )
+    carry_in := tmp(bitWidth + 1, bitWidth )
+  else
+    carry_in := tmp(bitWidth)
   io.out := RegNext( tmp(bitWidth - 1,0) )
   io.startOut := RegNext( io.start )
+
 }

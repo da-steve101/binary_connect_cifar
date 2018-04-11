@@ -29,13 +29,13 @@ class SparseMatMulSerial(
   val rdy = ( nibbleCntr === (( 1 << log2Iter) - 1).U || ( !io.dataIn.valid && nibbleCntr === 0.U ) )
   io.dataIn.ready := rdy
 
-  when ( nibbleCntr > 0.U || rdy ) {
+  when ( nibbleCntr > 0.U || io.dataIn.valid ) {
     nibbleCntr := nibbleCntr + 1.U
   }
-  val nibReg = RegNext( RegNext( nibbleCntr ) )
+  val nibReg = RegNext( nibbleCntr )
 
   val startRegs = ArrayBuffer[Bool]()
-  startRegs.append( nibReg === 0.U )
+  startRegs.append( RegNext( nibReg === 0.U && RegNext( io.dataIn.valid ) ) )
 
   val dataNibble = Reg( Vec( noInputs, 0.U( bitWidth.W ).cloneType ) )
   for ( x <- 0 until nIter ) {
@@ -73,10 +73,10 @@ class SparseMatMulSerial(
     return SerialAdder.add( a, b, start, bitWidth )._1
   }
 
-  def get_shift_val( op_idx : Int, shift_no : Int, stage : Int ) : UInt = {
+  def get_shift_val( op_idx : Int, shift_no : Int ) : UInt = {
     if ( op_idx < 0 )
       return 0.U
-    val start = startRegs( nodeDelays( stage ) )
+    val start = startRegs( nodeDelays( op_idx ) )
     if ( shift_no == 0 )
       return treeNodes( op_idx )
     if ( shift_no > 0 ) {
@@ -102,12 +102,11 @@ class SparseMatMulSerial(
     nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
     if ( startRegs.size <= nodeDelays( op(0) ) )
       startRegs.append( RegNext( startRegs.last ) )
-    val a = get_shift_val( op(1), op(5), op(1) )
-    val b = get_shift_val( op(2), op(6), op(2) )
+    val a = get_shift_val( op(1), op(5) )
+    val b = get_shift_val( op(2), op(6) )
     treeNodes( op(0) ) := {
-      RegNext( compute_op( op(4), a, b, startRegs( nodeDelays( op(0) ) - 1 ) ) )
+      compute_op( op(4), a, b, startRegs( nodeDelays( op(0) ) - 1 ) )
     }
-
   }
   val outputs = outputIdxs.map( i => {
     if ( i < 0 )
@@ -125,7 +124,7 @@ class SparseMatMulSerial(
       ShiftRegister( x._1, treeLatency - x._2 )
   })
 
-  val nibCntr = RegInit( 0.U( log2Iter.W ) )
+  val nibCntr = Reg( 0.U( log2Iter.W ).cloneType )
   when ( startRegs.last || nibCntr > 0.U ) {
     nibCntr := nibCntr + 1.U
   }
@@ -140,11 +139,10 @@ class SparseMatMulSerial(
     outReg.reverse.reduce( _ ## _ ).asTypeOf( dtype )
   })
 
-
   val latency = treeLatency + 2 + nIter - 1
 
   io.dataOut.bits := Vec( unnibble )
 
-  io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency, false.B, true.B )
+  io.dataOut.valid := RegNext( nibCntr === ( nIter - 1 ).U )
 
 }
