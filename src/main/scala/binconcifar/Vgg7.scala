@@ -12,13 +12,13 @@ class Vgg7( dtype : SInt ) extends Module {
   val tPutPart1Int = math.max( tPut, 1 ).toInt
   val tPutOut = 1 //tPut / 4
   val imgSize = 32
-  val imgOutSize = imgSize / 2
+  val imgOutSize = imgSize / 8
   // val dtype = SInt( 16.W )
   // type T = dtype.type
   val fracBits = 4
   val abFracBits = 6
   val inGrp = 3
-  val noOut = 64
+  val noOut = 256
   val latency = 32 // just some bs for now
   val noIn = tPutPart1Int
 
@@ -35,10 +35,11 @@ class Vgg7( dtype : SInt ) extends Module {
     noFilt : Int,
     outFormat : ( Int, Int, Int ),
     fanoutReg : Int,
+    prefix : String = "conv",
     noFifo : Boolean = false
   ) : DecoupledIO[Vec[SInt]] = {
 
-    val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_op_list.csv" )
+    val bufferedSource = scala.io.Source.fromFile("src/main/resources/" + prefix + idx + "_tern_op_list.csv" )
     val data_src = bufferedSource.getLines.toList
     val data_ints = data_src.map( _.split(",").toList.map( x => {
       x.toInt
@@ -53,7 +54,12 @@ class Vgg7( dtype : SInt ) extends Module {
 
     val tPutInt = math.max( tPutLyr, 1 ).toInt
     val blMod = Module( new SimpleBufferLayer( dtype, imgSize, outFormat._3, outFormat, 10, 1, true, tPutInt, noFifo = noFifo ) )
-    val conv1 = Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
+    val conv1 = {
+      if ( tPutLyr >= 1 )
+	Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
+      else
+	Module( new SparseMatMulSerial( dtype, treeDefinition, outputIdxs, (16 * tPutLyr).toInt ) )
+    }
 
     val scaleShift = Module( new ScaleAndShift(
       dtype,
@@ -184,22 +190,25 @@ class Vgg7( dtype : SInt ) extends Module {
   }
 
   // val lyr1 = createConvLyr( 1, io.dataIn, tPut, imgSize, 64, ( 3, 3, 3 ), 0, true )
-  val lyr1 = createSparseMulLyr( 1, io.dataIn, tPut, imgSize, 64, ( 3, 3, 3 ), 0, true )
+  val lyr1 = createSparseMulLyr( 1, io.dataIn, tPut, imgSize, 64, ( 3, 3, 3 ), 0, "cifar_layer", true )
   val lyr1Rev = reverseOrder( lyr1, tPutPart1Int )
-  val lyr2 = createConvLyr( 2, lyr1Rev, tPut, imgSize, 64, ( 3, 3, 64 ), 0, true )
+  // val lyr2 = createConvLyr( 2, lyr1Rev, tPut, imgSize, 64, ( 3, 3, 64 ), 0, true )
+  val lyr2 = createSparseMulLyr( 2, lyr1Rev, tPut, imgSize, 64, ( 3, 3, 64 ), 0, "conv", true )
   val lyr2Rev = reverseOrder( lyr2, tPutPart1Int )
   val mp1 = createPoolLyr( lyr2Rev, tPutPart1Int, imgSize, ( 2, 2, 64 ) )
 
-  io.dataOut <> mp1
-  /*
+  // io.dataOut <> mp1
+
   val tPutPart2 = tPut / 4
   val tPutPart2Int = math.max( tPutPart2, 1 ).toInt
   val mp1Rev = reverseOrder( mp1, tPutPart2Int )
   val imgSizePart2 = imgSize / 2
 
-  val lyr3 = createConvLyr( 3, mp1Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 64 ), 2 )
+  // val lyr3 = createConvLyr( 3, mp1Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 64 ), 2 )
+  val lyr3 = createSparseMulLyr( 3, mp1Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 64 ), 2 )
   val lyr3Rev = reverseOrder( lyr3, tPutPart2Int )
-  val lyr4 = createConvLyr( 4, lyr3Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 128 ), 2 )
+  // val lyr4 = createConvLyr( 4, lyr3Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 128 ), 2 )
+  val lyr4 = createSparseMulLyr( 4, lyr3Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 128 ), 2 )
   val lyr4Rev = reverseOrder( lyr4, tPutPart2Int )
   val mp2 = createPoolLyr( lyr4Rev, tPutPart2Int, imgSizePart2, ( 2, 2, 128 ) )
 
@@ -210,11 +219,12 @@ class Vgg7( dtype : SInt ) extends Module {
   val mp2Rev = reverseOrder( mp2, tPutPart3Int )
   val imgSizePart3 = imgSize / 4
 
-  val lyr5 = createConvLyr( 5, mp2Rev, tPutPart3, imgSizePart3, 256, ( 3, 3, 128 ), 2  )
+  // val lyr5 = createConvLyr( 5, mp2Rev, tPutPart3, imgSizePart3, 256, ( 3, 3, 128 ), 2  )
+  val lyr5 = createSparseMulLyr( 5, mp2Rev, tPutPart3, imgSizePart3, 256, ( 3, 3, 128 ), 2  )
   val lyr5Rev = reverseOrder( lyr5, tPutPart3Int )
-  val lyr6 = createConvLyr( 6, lyr5Rev, tPutPart3, imgSizePart3, 256, ( 3, 3, 256 ), 2 )
+  // val lyr6 = createConvLyr( 6, lyr5Rev, tPutPart3, imgSizePart3, 256, ( 3, 3, 256 ), 2 )
+  val lyr6 = createSparseMulLyr( 6, lyr5Rev, tPutPart3, imgSizePart3, 256, ( 3, 3, 256 ), 2 )
   val lyr6Rev = reverseOrder( lyr6, tPutPart3Int )
   val mp3 = createPoolLyr( lyr6Rev, tPutPart3Int, imgSizePart3, ( 2, 2, 256 ) )
   io.dataOut <> mp3
-   */
 }
