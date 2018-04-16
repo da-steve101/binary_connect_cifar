@@ -5,32 +5,96 @@ import numpy as np
 import sys
 import math
 
-def find_most_common( matrix ):
+def get_pattern_mat( matrix, pattern_matrix, update_idxs ):
+    for idx in update_idxs:
+        if len(pattern_matrix) <= idx:
+            pattern_matrix += [[[-1],[-1],-1]] # just filler
+        res_mat_pos = np.absolute( matrix + np.tile( matrix[idx,:], [ matrix.shape[0], 1 ] ) ) > 1
+        res_mat_pos_sum = np.sum( res_mat_pos, 1 )
+        res_mat_neg = np.absolute( matrix - np.tile( matrix[idx,:], [ matrix.shape[0], 1 ] ) ) > 1
+        res_mat_neg_sum = np.sum( res_mat_neg, 1 )
+        for i in range( idx ):
+            if len( pattern_matrix[i][0] ) == idx - i - 1:
+                pattern_matrix[i][0] += [ res_mat_pos_sum[i] ]
+                pattern_matrix[i][1] += [ res_mat_neg_sum[i] ]
+            else:
+                pattern_matrix[i][0][idx - i - 1] = res_mat_pos_sum[i]
+                pattern_matrix[i][1][idx - i - 1] = res_mat_neg_sum[i]
+            pattern_matrix[i][2] = max( pattern_matrix[i][0] + pattern_matrix[i][1] )
+        if matrix.shape[0] > idx + 1:
+            pattern_matrix[idx] = [ res_mat_pos_sum.tolist()[idx+1:],
+                                    res_mat_neg_sum.tolist()[idx+1:],
+                                    np.max( res_mat_pos_sum.tolist()[idx+1:] + res_mat_neg_sum.tolist()[idx+1:] ) ]
+    return pattern_matrix
+
+def get_common_idx( pattern_matrix ):
+    max_common = np.max( [ x[2] for x in pattern_matrix ] )
+    common_idxs = []
+    for idx, x in enumerate( pattern_matrix ):
+        if x[2] == max_common:
+            for j, x in enumerate( pattern_matrix[idx][0] ):
+                if x == max_common:
+                    common_idxs += [ (idx, j + idx + 1, True) ]
+            for j, x in enumerate( pattern_matrix[idx][1] ):
+                if x == max_common:
+                    common_idxs += [ (idx, j + idx + 1, False) ]
+    return max_common, common_idxs
+
+def reorder_pattern( pattern ):
+    pat_sum = np.sum( pattern )
+    if pat_sum < 0:
+        return ( -pattern, True )
+    elif pat_sum == 0:
+        for x in pattern:
+            if x > 0:
+                return ( pattern, False )
+            if x < 0:
+                return ( -pattern, True )
+    return ( pattern, False )
+
+def get_patterns_and_negations( matrix, common_idxs ):
     patterns = []
-    most_common_count = -1
-    remaining = 0
-    for sign in [ 1, -1 ]:
-        for i in range( len(matrix) - 1 ):
-            res_mat = np.absolute( matrix[:-(i+1),:] + sign*matrix[(i+1):,:] ) > 1
-            res_mat_sum = np.sum( res_mat, 1 )
-            res_mat_idx = np.argmax( res_mat_sum )
-            remaining += sum( res_mat_sum > 1 )
-            if res_mat_sum[res_mat_idx] > most_common_count:
-                most_common_count = res_mat_sum[res_mat_idx]
-                patterns = [ res_mat[res_mat_idx]*matrix[res_mat_idx,:] ]
-            elif res_mat_sum[res_mat_idx] == most_common_count:
-                patterns += [ res_mat[res_mat_idx]*matrix[res_mat_idx,:] ]
-    print( str( remaining ) + " common subexpressions detected" )
+    negations = []
+    for idx_a, idx_b, is_pos in common_idxs:
+        sign = -1
+        if is_pos:
+            sign = 1
+        pattern = (np.absolute( matrix[idx_a] + sign*matrix[idx_b] ) > 1)*matrix[idx_a]
+        pattern, neg = reorder_pattern( pattern )
+        negations += [ neg ]
+        patterns += [ pattern ]
     # find most common
     patterns = [ list(x) for x in patterns ]
-    patterns = sorted( patterns )
+    patterns = sorted( enumerate( patterns ), key=lambda x:x[1] )
+    return patterns, negations
+
+def get_pos_neg( common_idx, negation ):
+    res_pos = []
+    res_neg = []
+    if common_idx[2]:
+        if negation:
+            res_neg = common_idx[:2]
+        else:
+            res_pos = common_idx[:2]
+    else:
+        if negation:
+            res_pos = [ common_idx[1] ]
+            res_neg = [ common_idx[0] ]
+        else:
+            res_pos = [ common_idx[0] ]
+            res_neg = [ common_idx[1] ]
+    return list(set(res_pos)), list(set(res_neg))
+
+def find_most_common( matrix, common_idxs ):
+    patterns, negations = get_patterns_and_negations( matrix, common_idxs )
+
     # group and find largest group ...
     best_idx = 0
     best_size = 0
     curr_start = 0
     curr_size = 0
-    for idx, pattern in enumerate( patterns ):
-        if patterns[curr_start] == pattern:
+    for idx, pattern in enumerate( [ x[1] for x in patterns ] ):
+        if patterns[curr_start][1] == pattern:
             curr_size += 1
         else:
             curr_size = 1
@@ -38,14 +102,16 @@ def find_most_common( matrix ):
         if curr_size > best_size:
             best_idx = curr_start
             best_size = curr_size
-    pattern = patterns[best_idx]
-    return most_common_count, pattern
+    pattern = patterns[best_idx][1]
+    idxs = [ x for x in [ patterns[i][0] for i in range( best_idx, best_idx + best_size ) ] ]
 
-def get_all_common( matrix, pattern ):
-    count = len( [ x for x in pattern if x != 0 ] )
-    res_pos = [ i for i, z in enumerate( np.dot( matrix, pattern ) ) if z == count ]
-    res_neg = [ i for i, z in enumerate( np.dot( -matrix, pattern ) ) if z == count ]
-    return res_pos, res_neg
+    res_pos = []
+    res_neg = []
+    for i in idxs:
+        tmp_pos, tmp_neg = get_pos_neg( common_idxs[i], negations[i] )
+        res_pos += tmp_pos
+        res_neg += tmp_neg
+    return pattern, list(set(res_pos)), list(set(res_neg))
 
 def update_matrix( matrix, idxs_pos, idxs_neg, pattern ):
     # first eliminate common expr
@@ -63,16 +129,65 @@ def update_matrix( matrix, idxs_pos, idxs_neg, pattern ):
         matrix[i,-1] = -1
     return matrix
 
+def is_intersection( existing_patterns, new_pattern ):
+    p = np.absolute( np.array( new_pattern ) )
+    for ep in existing_patterns:
+        res = p.dot( np.absolute( np.array(ep) ) )
+        if res > 0:
+            return True
+    return False
+
+def fast_update_pat_2_join( matrix, pattern_matrix ):
+    print( "Only subexpressions of size 2 left ..." )
+    max_common, common_idxs = get_common_idx( pattern_matrix )
+    if max_common < 2:
+        return max_common, matrix, []
+    patterns, negations = get_patterns_and_negations( matrix, common_idxs )
+    # determine non-intersecting patterns
+    idx_to_pattern = {}
+    chosen_idxs = []
+    for p in patterns:
+        idx_a, idx_b, neg = common_idxs[p[0]]
+        if idx_a not in idx_to_pattern:
+            idx_to_pattern[idx_a] = []
+        if idx_b not in idx_to_pattern:
+            idx_to_pattern[idx_b] = []
+        if not is_intersection( idx_to_pattern[idx_a], p[1] ) and not is_intersection( idx_to_pattern[ idx_b ], p[1] ):
+            idx_to_pattern[ idx_a ] += [ p[1] ]
+            idx_to_pattern[ idx_b ] += [ p[1] ]
+            chosen_idxs += [ p ]
+    print( "There are " + str(len(chosen_idxs)) + " non intersecting patterns of size 2 that can be removed" )
+    no_pad = 0
+    update_idxs = []
+    for i, p in chosen_idxs:
+        res_pos, res_neg = get_pos_neg( common_idxs[i], negations[i] )
+        pattern = np.concatenate( ( np.array( p ), np.array( [0]*no_pad ) ) )
+        no_pad += 1
+        matrix = update_matrix( matrix, res_pos, res_neg, pattern )
+        update_idxs += res_pos + res_neg
+    update_idxs = list(set(update_idxs)) + list(range( matrix.shape[0] - no_pad, matrix.shape[0] ))
+    update_idxs.sort()
+    return max_common, matrix, update_idxs
+
 def subexpression_elimination( matrix ):
-    most_common_count, pattern = find_most_common( matrix )
+    pattern_matrix = []
+    update_idxs = list( range( matrix.shape[0] ) )
+    most_common_count = 3
+    pattern_pos = []
+    pattern_neg = []
     while most_common_count > 1:
-        #if True:
-        pattern_pos, pattern_neg = get_all_common( matrix, pattern )
-        matrix = update_matrix( matrix, pattern_pos, pattern_neg, pattern )
-        most_common_count, pattern = find_most_common( matrix )
-        print( str(len(pattern_pos) + len(pattern_neg)) +
-               " expressions have a common subexpression of size "
-               + str(most_common_count) + " to be eliminated"  )
+        if most_common_count > 2 or len(pattern_pos) + len(pattern_neg) > 2:
+            pattern_matrix = get_pattern_mat( matrix, pattern_matrix, update_idxs )
+            most_common_count, common_idxs = get_common_idx( pattern_matrix )
+            pattern, pattern_pos, pattern_neg = find_most_common( matrix, common_idxs )
+            matrix = update_matrix( matrix, pattern_pos, pattern_neg, pattern )
+            update_idxs = pattern_pos + pattern_neg + [matrix.shape[0]-1]
+            print( str(len(pattern_pos) + len(pattern_neg)) +
+                   " expressions have a common subexpression of size "
+                   + str(most_common_count) + " to be eliminated"  )
+        else:
+            pattern_matrix = get_pattern_mat( matrix, pattern_matrix, update_idxs )
+            most_common_count, matrix, update_idxs = fast_update_pat_2_join( matrix, pattern_matrix )
     return matrix
 
 def size_of_tree( matrix ):
