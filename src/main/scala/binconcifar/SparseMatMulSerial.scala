@@ -9,7 +9,8 @@ class SparseMatMulSerial(
   dtype : SInt,
   val treeDefinition : Seq[Seq[Int]],
   val outputIdxs : Seq[Int],
-  val bitWidth : Int
+  val bitWidth : Int,
+  val fanout : Int = 0
 ) extends Module {
 
   val noInputs = treeDefinition.head.head
@@ -32,15 +33,16 @@ class SparseMatMulSerial(
   when ( nibbleCntr > 0.U || io.dataIn.valid ) {
     nibbleCntr := nibbleCntr + 1.U
   }
-  val nibReg = RegNext( nibbleCntr )
+  val nibReg = ShiftRegister( nibbleCntr, 1 + fanout )
+  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 2 + fanout, false.B, true.B )
 
   val startRegs = ArrayBuffer[Bool]()
-  startRegs.append( RegNext( nibReg === 0.U && RegNext( io.dataIn.valid ) ) )
+  startRegs.append( startReg0 )
 
   val dataNibble = Reg( Vec( noInputs, 0.U( bitWidth.W ).cloneType ) )
   for ( x <- 0 until nIter ) {
     for ( i <- 0 until noInputs ) {
-      val thisNibble = RegNext( io.dataIn.bits( i )( bitWidth * ( x + 1 ) - 1, bitWidth*x ) )
+      val thisNibble = ShiftRegister( io.dataIn.bits( i )( bitWidth * ( x + 1 ) - 1, bitWidth*x ), 1 + fanout )
       if ( x > 0 ) {
         when ( nibReg === x.U ) {
           dataNibble( i ) := thisNibble
@@ -124,7 +126,7 @@ class SparseMatMulSerial(
       ShiftRegister( x._1, treeLatency - x._2 )
   })
 
-  val nibCntr = Reg( 0.U( log2Iter.W ).cloneType )
+  val nibCntr = RegInit( 0.U( log2Iter.W ) )
   when ( startRegs.last || nibCntr > 0.U ) {
     nibCntr := nibCntr + 1.U
   }
@@ -143,6 +145,8 @@ class SparseMatMulSerial(
 
   io.dataOut.bits := Vec( unnibble )
 
-  io.dataOut.valid := RegNext( nibCntr === ( nIter - 1 ).U )
+  val vld = RegInit( false.B )
+  vld := ( nibCntr === ( nIter - 1 ).U )
+  io.dataOut.valid := vld
 
 }
