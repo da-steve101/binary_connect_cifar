@@ -225,7 +225,7 @@ private class SerialTriConvSum (
     }
   }
 
-  val startReg = ShiftRegister( io.start, fanoutReg + 2 )
+  val startReg = ShiftRegister( io.start, fanoutReg + 1 )
 
   def computeSum( posNums : Seq[UInt], negNums : Seq[UInt], startReg : Bool ) : (UInt, Bool, Int) = {
     var plusList = posNums.toList.map( x => { ( x, startReg ) } )
@@ -295,7 +295,7 @@ private class SerialTriConvSum (
 
   val unnibble = nibbleOut.zip( nibbleStarts ).map( x => {
     val nibCntr = RegInit( 0.U( log2Iter.W ) )
-    when ( x._2 || nibCntr > 0.U ) {
+    when ( RegNext( x._2 ) || nibCntr > 0.U ) {
       nibCntr := nibCntr + 1.U
     }
     val outReg = Reg( Vec( nIter, 0.U( bitWidth.W ).cloneType ) )

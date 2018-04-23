@@ -81,19 +81,17 @@ class SerialAdder( add : Boolean, bitWidth : Int, negate : Boolean = false ) ext
   val carry_in = Reg( carry_init.cloneType )
   val tmp = Wire( aPad.cloneType )
 
-  val carry_use = Wire( carry_init.cloneType )
-  carry_use := carry_in
-  when ( io.start ) {
-    carry_use := carry_init
-  }
-
-  tmp := ( aPad + bInv ) + carry_use
+  tmp := ( aPad + bInv ) + carry_in
 
   if ( negate )
     carry_in := tmp(bitWidth + 1, bitWidth )
   else
     carry_in := tmp(bitWidth)
+
+  when ( io.start ) {
+    carry_in := carry_init
+  }
+
   io.out := RegNext( tmp(bitWidth - 1,0) )
   io.startOut := RegNext( io.start )
-
 }

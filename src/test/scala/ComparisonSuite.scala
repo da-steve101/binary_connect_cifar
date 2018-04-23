@@ -63,7 +63,7 @@ class ComparisonModule extends Module {
   ).map( x => x.map( _.reverse ).reverse )
 
   // val conv_s = Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
-  val conv_s = Module( new SparseMatMulSerial( dtype, treeDefinition, outputIdxs, 4 ) )
+  val conv_s = Module( new SparseMatMulSerial( dtype, treeDefinition, outputIdxs, 4, 2 ) )
 
   val conv_orig = Module( new TriConvSum( dtype, weights_trans, tPutLyr, fanoutReg ) )
 

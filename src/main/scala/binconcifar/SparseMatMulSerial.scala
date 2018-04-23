@@ -34,7 +34,7 @@ class SparseMatMulSerial(
     nibbleCntr := nibbleCntr + 1.U
   }
   val nibReg = ShiftRegister( nibbleCntr, 1 + fanout )
-  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 2 + fanout, false.B, true.B )
+  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 1 + fanout, false.B, true.B )
 
   val startRegs = ArrayBuffer[Bool]()
   startRegs.append( startReg0 )
@@ -102,7 +102,7 @@ class SparseMatMulSerial(
       ( op(3) < 0 || nodeDelays( op(1) ) == nodeDelays( op(3) ) ),
       "Tree adds values from different layers for op: " + op )
     nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
-    if ( startRegs.size <= nodeDelays( op(0) ) )
+    if ( startRegs.size <= nodeDelays( op(0) ) + 1 )
       startRegs.append( RegNext( startRegs.last ) )
     val a = get_shift_val( op(1), op(5) )
     val b = get_shift_val( op(2), op(6) )

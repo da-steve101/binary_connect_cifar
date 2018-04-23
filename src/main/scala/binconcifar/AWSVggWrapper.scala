@@ -38,15 +38,15 @@ class AWSVggWrapper extends Module {
   })
 
   // just add a reg on input as don't have IO
-  val bitsIn = RegNext( io.dataIn.bits )
-  val vldIn = RegNext( io.dataIn.valid )
-  val rdy = RegNext( io.dataOut.ready )
+  val bitsIn = io.dataIn.bits
+  val vldIn = io.dataIn.valid
+  val rdy = io.dataOut.ready
 
   // pass IO to blank Vgg7
   private val vgg = Module( new Vgg7( dtype ) )
   vgg.io.dataIn.bits := bitsIn
   vgg.io.dataIn.valid := vldIn
-  io.dataIn.ready := RegNext( vgg.io.dataIn.ready )
+  io.dataIn.ready := vgg.io.dataIn.ready
 
   // Need to pipeline the mux
   val dataInAsUInt = vgg.io.dataOut.bits.asInstanceOf[Vec[SInt]].map( _.asUInt() ).reduce( _ ## _ )
