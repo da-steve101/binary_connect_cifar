@@ -205,10 +205,10 @@ class Vgg7( dtype : SInt ) extends Module {
   val imgSizePart2 = imgSize / 2
 
   // val lyr3 = createConvLyr( 3, mp1Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 64 ), 2 )
-  val lyr3 = createSparseMulLyr( 3, mp1Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 64 ), 1 )
+  val lyr3 = createSparseMulLyr( 3, mp1Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 64 ), 2 )
   val lyr3Rev = reverseOrder( lyr3, tPutPart2Int )
   // val lyr4 = createConvLyr( 4, lyr3Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 128 ), 2 )
-  val lyr4 = createSparseMulLyr( 4, lyr3Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 128 ), 1 )
+  val lyr4 = createSparseMulLyr( 4, lyr3Rev, tPutPart2, imgSizePart2, 128, ( 3, 3, 128 ), 2 )
   val lyr4Rev = reverseOrder( lyr4, tPutPart2Int )
   val mp2 = createPoolLyr( lyr4Rev, tPutPart2Int, imgSizePart2, ( 2, 2, 128 ) )
 
