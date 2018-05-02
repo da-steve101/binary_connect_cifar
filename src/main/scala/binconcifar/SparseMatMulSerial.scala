@@ -25,20 +25,37 @@ class SparseMatMulSerial(
   val log2BW = log2Ceil( bitWidth )
   val log2Iter = log2Ceil( nIter )
 
-  val nibbleCntr = RegInit( 0.U( log2Iter.W ) )
+  val nibbleCntrs = List.fill( 11 ) { RegInit( 0.U( log2Iter.W ) ) }
+  val nibbleCntr = nibbleCntrs.head
 
   val rdy = ( nibbleCntr === (( 1 << log2Iter) - 1).U || ( !io.dataIn.valid && nibbleCntr === 0.U ) )
   io.dataIn.ready := rdy
 
-  when ( nibbleCntr > 0.U || io.dataIn.valid ) {
-    nibbleCntr := nibbleCntr + 1.U
+  for ( nc <- nibbleCntrs ) {
+    when ( nc > 0.U || io.dataIn.valid ) {
+      nc := nc + 1.U
+    }
   }
-  val nibReg = ShiftRegister( nibbleCntr, 1 + fanout )
-  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 1 + fanout, false.B, true.B )
+  val dataInBits = io.dataIn.bits.toList.zipWithIndex.map( di => {
+    val thisNibble = Reg( 0.U( bitWidth.W ).cloneType )
+    val nc = nibbleCntrs( 1 + ( di._2 % ( nibbleCntrs.size - 1 ) ) )
+    for ( x <- 0 until nIter ) {
+      val dx = di._1( bitWidth * ( x + 1 ) - 1, bitWidth*x )
+      if ( x > 0 ) {
+        when ( nc === x.U ) {
+          thisNibble := dx
+        }
+      } else
+          thisNibble := dx
+    }
+    RegNext( thisNibble )
+  })
+  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 1, false.B, true.B )
 
   val startRegs = ArrayBuffer[Bool]()
   startRegs.append( startReg0 )
 
+  /*
   val dataNibble = Reg( Vec( noInputs, 0.U( bitWidth.W ).cloneType ) )
   for ( x <- 0 until nIter ) {
     for ( i <- 0 until noInputs ) {
@@ -51,6 +68,7 @@ class SparseMatMulSerial(
           dataNibble( i ) := thisNibble
     }
   }
+   */
 
   val noNodes = treeDefinition.last.head + 1
   val treeNodes = Wire( Vec( noNodes, 0.U( bitWidth.W ).cloneType ) )
@@ -62,7 +80,7 @@ class SparseMatMulSerial(
     treeNodes( i ) := 0.U( 4.W )
 
   // connect inputs
-  for ( d <- dataNibble.zipWithIndex )
+  for ( d <- dataInBits.zipWithIndex )
     treeNodes( d._2 ) := d._1
 
   def compute_op( op_code : Int, a : UInt, b : UInt, start : Bool ) : UInt = {
