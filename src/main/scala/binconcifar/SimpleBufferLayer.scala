@@ -71,7 +71,7 @@ class SimpleBufferLayer[ T <: SInt](
   }
 
   val cycPerRow = imgSize / tPut
-  val latency = cycPerRow + 5
+  val latency = cycPerRow + 5 + 1
 
   def getMemBuffers( inputVec : ValidIO[Vec[T]], bufferSize : Int ) : List[ValidIO[Vec[T]]] = {
     val memBuffers = ArrayBuffer[ValidIO[Vec[T]]]()
@@ -118,17 +118,18 @@ class SimpleBufferLayer[ T <: SInt](
     })
   })
 
-  val dataOut = ( 0 until noOut ).map( i => { grpedVecs.map( jv => jv( i ) ) } ).toList.reverse
+  val delay = 1
+  val dataOut = ( 0 until noOut ).map( i => {
+    grpedVecs.map( jv => jv( i ).map( x => x.map( y => ShiftRegister( y, delay, ready ) ) ) )
+  }).toList.reverse
 
   // is initialized when first and second window is valid for both cases
-  val vld = windowedData.take( 2 ).map( _.valid ).reduce( _ && _ )
+  val vld = ShiftRegister( windowedData.take( 2 ).map( _.valid ).reduce( _ && _ ), delay, false.B, ready )
 
+  val vldNxt = ShiftRegister( vld, 1, false.B, ready )
   val vldCycPerRow = ( imgSize / math.max( tPut, stride ) ).toInt
 
-  val vldSet = RegInit( false.B )
-  when ( ready ) {
-    vldSet := vld
-  }
+  val vldSet = ShiftRegister( vld, 2, false.B, ready )
 
   val rowCntr = Counter( vld && ready, vldCycPerRow )
   val colCntr = Counter( rowCntr._2, imgSize / stride )
@@ -156,8 +157,9 @@ class SimpleBufferLayer[ T <: SInt](
           val isLeft = isFirst && convGrp._2 == convRow._1.size - 1
           val isRight = isLast && convGrp._2 == 0
           val grpVec = Reg( Vec( grpSize, dtype.cloneType ) )
-          when ( vld && ready ) {
-            grpVec := convGrp._1
+          val d = RegEnable( Vec( convGrp._1 ), ready )
+          when ( vldNxt && ready ) {
+            grpVec := d
           }
           if ( isTop || isBot || isLeft || isRight ) {
             val padConds : List[(Boolean, Bool)] = List(
@@ -166,7 +168,7 @@ class SimpleBufferLayer[ T <: SInt](
               ( isBot, colCntrFirst ),  // pad bot
               ( isTop, colCntrLast )    // pad top
             )
-            val padIt = padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ ) // Crit path here ...
+            val padIt = RegEnable( padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ ), vld & ready ) // Crit path here ...
             when ( padIt && ready ) {
               grpVec := zeroGrp
             }
@@ -181,12 +183,6 @@ class SimpleBufferLayer[ T <: SInt](
   } else {
     io.dataOut.bits := Vec( dataOut.reduce( _ ++ _ ).reduce( _ ++ _ ).map( _.toList ).reduce( _ ++ _ ) )
     // need to supress vld on odd strides
-    val colCntrReg = {
-      if ( tPut == 1 )
-        RegEnable( !colCntr._1(0), false.B, queueIOOut.valid & ready)
-      else
-        RegEnable( !colCntr._1(0), false.B, vld )
-    }
-    io.dataOut.valid := vld & colCntrReg
+    io.dataOut.valid := vld & !colCntr._1(0)
   }
 }
