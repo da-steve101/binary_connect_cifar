@@ -48,9 +48,9 @@ class SparseMatMulSerial(
       } else
           thisNibble := dx
     }
-    RegNext( thisNibble )
+    ShiftRegister( thisNibble, 2 )
   })
-  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 1, false.B, true.B )
+  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 2, false.B, true.B )
 
   val startRegs = ArrayBuffer[Bool]()
   startRegs.append( startReg0 )

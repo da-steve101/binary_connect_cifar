@@ -17,7 +17,7 @@ class SimpleBufferLayer[ T <: SInt](
   val stride : Int,
   val padding : Boolean,
   tPut : Int,
-  noFifo : Boolean = false,
+  val noFifo : Boolean = false,
   debug : Boolean = false
 ) extends NNLayer(
   dtype,
@@ -36,30 +36,32 @@ class SimpleBufferLayer[ T <: SInt](
   Predef.assert( imgSize % stride == 0, "ImgSize must be divisible by stride" )
   Predef.assert( imgSize % tPut == 0, "ImgSize must be divisible by tPut" )
 
-  val ready = {
-    if ( noFifo )
-      true.B
-    else
-      io.dataOut.ready
-  }
-  val dataInAsUInt = io.dataIn.bits.asInstanceOf[Vec[SInt]].map( _.asUInt() ).reduce( _ ## _ )
-  val queueIOIn = Wire( Decoupled( dataInAsUInt.cloneType ) )
-  queueIOIn.bits := dataInAsUInt
-  queueIOIn.valid := io.dataIn.valid
+  val ready = true.B
 
-  val queueIOOut : DecoupledIO[UInt] = {
-    if ( noFifo )
-      queueIOIn
-    else
-      Queue( queueIOIn, qSize )
+  def getUIntQueue( qIOIn : DecoupledIO[Vec[T]] ) : DecoupledIO[Vec[T]] = {
+    // convert to a single UInt
+    val dataInAsUInt = qIOIn.bits.asInstanceOf[Vec[SInt]].map( _.asUInt() ).reduce( _ ## _ )
+    val queueIOIn = Wire( Decoupled( dataInAsUInt.cloneType ) )
+    queueIOIn.bits := dataInAsUInt
+    queueIOIn.valid := qIOIn.valid
+    qIOIn.ready := queueIOIn.ready
+
+    val queueIOOut = Queue( queueIOIn, qSize )
+
+    // convert back to Vec[SInt]
+    val qIOOut = Wire( qIOIn.cloneType )
+    qIOOut.valid := queueIOOut.valid
+    queueIOOut.ready := qIOOut.ready
+
+    val dtypeWidth = dtype.getWidth
+    for ( i <- 0 until qIOOut.bits.size )
+      qIOOut.bits( qIOOut.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
+
+    qIOOut
   }
 
+  val queueIOOut = io.dataIn
   queueIOOut.ready := ready
-  io.dataIn.ready := queueIOIn.ready
-  val sintOut = Wire( io.dataIn.bits.cloneType )
-  val dtypeWidth = dtype.getWidth
-  for ( i <- 0 until io.dataIn.bits.size )
-    sintOut( io.dataIn.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
 
   def initCounter( vld : Bool, cnt : Int ) : Bool = {
     val vldCnt = Counter( vld, cnt )
@@ -87,9 +89,9 @@ class SimpleBufferLayer[ T <: SInt](
     memBuffers.toList
   }
 
-  val queueVld = Wire( Valid( sintOut.cloneType ) )
+  val queueVld = Wire( Valid( queueIOOut.bits.cloneType ) )
   queueVld.valid := queueIOOut.valid
-  queueVld.bits := sintOut
+  queueVld.bits := queueIOOut.bits
   val memBuffers = getMemBuffers( queueVld, cycPerRow )
 
   def windowTheData(
@@ -168,7 +170,7 @@ class SimpleBufferLayer[ T <: SInt](
               ( isBot, colCntrFirst ),  // pad bot
               ( isTop, colCntrLast )    // pad top
             )
-            val padIt = RegEnable( padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ ), vld & ready ) // Crit path here ...
+            val padIt = RegEnable( padConds.filter( _._1 ).map( _._2 ).reduce( _ || _ ), vld & ready )
             when ( padIt && ready ) {
               grpVec := zeroGrp
             }
@@ -178,11 +180,30 @@ class SimpleBufferLayer[ T <: SInt](
       }).reduce( _ ++ _ )
     }).reduce( _ ++ _ )
 
-    io.dataOut.bits := Vec( paddedData )
-    io.dataOut.valid := vldSet
+    val padVec = Vec( paddedData )
+
+    val tmpQIO = Wire( Decoupled( padVec.cloneType ) )
+    tmpQIO.bits := padVec
+    tmpQIO.valid := vldSet
+    val outQ = {
+      if ( noFifo )
+        tmpQIO
+      else
+        getUIntQueue( tmpQIO )
+    }
+    io.dataOut <> outQ
   } else {
-    io.dataOut.bits := Vec( dataOut.reduce( _ ++ _ ).reduce( _ ++ _ ).map( _.toList ).reduce( _ ++ _ ) )
+    val vecOut = Vec( dataOut.reduce( _ ++ _ ).reduce( _ ++ _ ).map( _.toList ).reduce( _ ++ _ ) )
+    val tmpQIO = Wire( Decoupled( vecOut.cloneType ) )
+    tmpQIO.bits := vecOut
     // need to supress vld on odd strides
-    io.dataOut.valid := vld & !colCntr._1(0)
+    tmpQIO.valid := vld & !colCntr._1(0)
+    val outQ = {
+      if ( noFifo )
+        tmpQIO
+      else
+        getUIntQueue( tmpQIO )
+    }
+    io.dataOut <> outQ
   }
 }
