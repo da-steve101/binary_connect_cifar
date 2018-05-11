@@ -17,7 +17,7 @@ class SimpleBufferLayer[ T <: SInt](
   val stride : Int,
   val padding : Boolean,
   tPut : Int,
-  noFifo : Boolean = false,
+  val noFifo : Boolean = false,
   debug : Boolean = false
 ) extends NNLayer(
   dtype,

@@ -28,7 +28,10 @@ class SparseMatMulSerial(
   val nibbleCntrs = List.fill( 11 ) { RegInit( 0.U( log2Iter.W ) ) }
   val nibbleCntr = nibbleCntrs.head
 
-  val rdy = ( nibbleCntr === (( 1 << log2Iter) - 1).U || ( !io.dataIn.valid && nibbleCntr === 0.U ) )
+  val almostRdy = RegNext( nibbleCntr === (( 1 << log2Iter) - 1).U || nibbleCntr === 0.U )
+  val iterDone = RegInit( false.B )
+  iterDone := ( nibbleCntr === (( 1 << log2Iter) - 2).U )
+  val rdy = ( iterDone || ( !io.dataIn.valid && almostRdy ) )
   io.dataIn.ready := rdy
 
   for ( nc <- nibbleCntrs ) {

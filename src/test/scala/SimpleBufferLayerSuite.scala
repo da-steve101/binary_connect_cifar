@@ -76,7 +76,12 @@ class SimpleBufferLayerTests( c : SimpleBufferLayer[SInt] ) extends PeekPokeTest
     if ( peek( c.io.dataOut.valid ) == 1 )
       rdyCnt = ( rdyCnt + 1 ) % 4
      */
-    val rdy = ( vldCnt > 8 ) || ( myRand.nextInt( 4 ) != 0 )
+    val rdy = {
+      if ( c.noFifo )
+        true
+      else
+        ( vldCnt > 8 ) || ( myRand.nextInt( 4 ) != 0 )
+    }
     val vld = myRand.nextInt( 2 ) != 0
     if ( vld )
       vldCnt += 1
@@ -127,7 +132,7 @@ class SimpleBufferLayerSuite extends ChiselFlatSpec {
   val grpSizes = List( 1, 2, 3, 5, 8 )
   val qSize = 10
   val tPuts = List( 1 ) //, 2, 4, 8 )
-  val convImgComb = List( ( 2, 2, 32, false ), ( 3, 1, 32, true ) )
+  val convImgComb = List( ( 2, 2, 32, false, true ), ( 3, 1, 32, true, false ), ( 3, 1, 32, true, true ) )
   backends foreach {backend =>
     it should s"buffer inputs on a layer using $backend" in {
       for ( grpSize <- grpSizes ) {
@@ -137,11 +142,12 @@ class SimpleBufferLayerSuite extends ChiselFlatSpec {
             val outFormat = ( inputParam._1, inputParam._1, grpSize )
             val stride = inputParam._2
             val padding = inputParam._4
+            val noFifo = inputParam._5
             println( "imgSize = " + imgSize + ", grpSize = " + grpSize + ", outFormat = " +
               outFormat + ", qSize = " + qSize + ", stride = " + stride + ", padding = " +
-              padding + ", tPut = " + tPut )
+              padding + ", tPut = " + tPut + ", noFifo = " + noFifo )
             Driver(() => {
-              new SimpleBufferLayer( SInt( 16.W ), imgSize, grpSize, outFormat, qSize, stride, padding, tPut )
+              new SimpleBufferLayer( SInt( 16.W ), imgSize, grpSize, outFormat, qSize, stride, padding, tPut, noFifo = noFifo )
             }, backend, false )( c => new SimpleBufferLayerTests( c ) ) should be (true)
           }
         }
