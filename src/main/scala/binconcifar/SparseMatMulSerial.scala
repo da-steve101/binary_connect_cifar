@@ -14,10 +14,11 @@ class SparseMatMulSerial(
 ) extends Module {
 
   val noInputs = treeDefinition.head.head
+  val inType = UInt( width = bitWidth.W )
 
   val io = IO( new Bundle {
-    val dataIn = Flipped(Decoupled( Vec( noInputs, dtype.cloneType ) ))
-    val dataOut = Decoupled( Vec( outputIdxs.size, dtype.cloneType ) )
+    val dataIn = Flipped(Valid( Vec( noInputs, inType.cloneType ) ))
+    val dataOut = Valid( Vec( outputIdxs.size, dtype.cloneType ) )
   })
 
   val inWidth = dtype.cloneType.getWidth
@@ -25,53 +26,16 @@ class SparseMatMulSerial(
   val log2BW = log2Ceil( bitWidth )
   val log2Iter = log2Ceil( nIter )
 
-  val nibbleCntrs = List.fill( 11 ) { RegInit( 0.U( log2Iter.W ) ) }
-  val nibbleCntr = nibbleCntrs.head
+  val nibbleCntr = RegInit( 0.U( log2Iter.W ) )
 
-  val almostRdy = RegNext( nibbleCntr === (( 1 << log2Iter) - 1).U || nibbleCntr === 0.U )
-  val iterDone = RegInit( false.B )
-  iterDone := ( nibbleCntr === (( 1 << log2Iter) - 2).U )
-  val rdy = ( iterDone || ( !io.dataIn.valid && almostRdy ) )
-  io.dataIn.ready := rdy
-
-  for ( nc <- nibbleCntrs ) {
-    when ( nc > 0.U || io.dataIn.valid ) {
-      nc := nc + 1.U
-    }
+  when ( nibbleCntr > 0.U || io.dataIn.valid ) {
+    nibbleCntr := nibbleCntr + 1.U
   }
-  val dataInBits = io.dataIn.bits.toList.zipWithIndex.map( di => {
-    val thisNibble = Reg( 0.U( bitWidth.W ).cloneType )
-    val nc = nibbleCntrs( 1 + ( di._2 % ( nibbleCntrs.size - 1 ) ) )
-    for ( x <- 0 until nIter ) {
-      val dx = di._1( bitWidth * ( x + 1 ) - 1, bitWidth*x )
-      if ( x > 0 ) {
-        when ( nc === x.U ) {
-          thisNibble := dx
-        }
-      } else
-          thisNibble := dx
-    }
-    RegNext( thisNibble )
-  })
+  val dataInBits = ShiftRegister( io.dataIn.bits, 2 )
   val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 1, false.B, true.B )
 
   val startRegs = ArrayBuffer[Bool]()
   startRegs.append( startReg0 )
-
-  /*
-  val dataNibble = Reg( Vec( noInputs, 0.U( bitWidth.W ).cloneType ) )
-  for ( x <- 0 until nIter ) {
-    for ( i <- 0 until noInputs ) {
-      val thisNibble = ShiftRegister( io.dataIn.bits( i )( bitWidth * ( x + 1 ) - 1, bitWidth*x ), 1 + fanout )
-      if ( x > 0 ) {
-        when ( nibReg === x.U ) {
-          dataNibble( i ) := thisNibble
-        }
-      } else
-          dataNibble( i ) := thisNibble
-    }
-  }
-   */
 
   val noNodes = treeDefinition.last.head + 1
   val treeNodes = Wire( Vec( noNodes, 0.U( bitWidth.W ).cloneType ) )

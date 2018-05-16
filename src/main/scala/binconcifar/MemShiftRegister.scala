@@ -34,8 +34,9 @@ class MemShiftRegister[T <: Data]( genType : T, val n : Int ) extends Module {
   })
 
   // if genType is a vec then aggregate bits to UInt
-  val grpedVec = io.in.asInstanceOf[Vec[SInt]]
+  val grpedVec : Vec[Bits] = io.in.asInstanceOf[Vec[Bits]]
   val uintVec = grpedVec.map( _.asUInt() ).reduce( _ ## _ )
+  val bitWidth = uintVec.getWidth / grpedVec.size
 
   if ( n <= 3 ) {
     io.out := ShiftRegister( io.in, n, io.en )
@@ -59,8 +60,13 @@ class MemShiftRegister[T <: Data]( genType : T, val n : Int ) extends Module {
 
     val uintOut = myMem( readAddr )
     val sintOut = Wire( grpedVec.cloneType )
-    for ( i <- 0 until grpedVec.size )
-      sintOut( grpedVec.size - i - 1 ) := uintOut((i+1)*16 - 1, i*16).asSInt()
+    for ( i <- 0 until grpedVec.size ) {
+      val b : Bits = uintOut((i+1)*bitWidth - 1, i*bitWidth)
+      if ( sintOut.head.isInstanceOf[SInt] )
+        sintOut( grpedVec.size - i - 1 ) := b.asSInt()
+      else
+        sintOut( grpedVec.size - i - 1 ) := b
+    }
 
     // register without enable for output of BRAM
     val sintBuf = RegNext( sintOut )

@@ -7,18 +7,15 @@ import scala.util.Random
 import binconcifar.MemShiftRegister
 import scala.collection.mutable.ArrayBuffer
 
-class MemShiftRegisterTests( c : MemShiftRegister[Vec[SInt]] ) extends PeekPokeTester( c ) {
+class MemShiftRegisterTests[T <: Bits]( c : MemShiftRegister[Vec[T]], bitWidth : Int ) extends PeekPokeTester( c ) {
   val myRand = new Random
   val cycs = 1000
 
   val tmpsr = ArrayBuffer[List[BigInt]]()
   for ( i <- 0 until cycs ) {
     tmpsr += List.fill( c.io.in.size ) {
-      val x = myRand.nextInt( 1 << 16 )
-      if ( x >= ( 1 << 15 ) )
-        BigInt( x - (1 << 16))
-      else
-        BigInt(x)
+      val x = myRand.nextInt( 1 << bitWidth )
+      BigInt(x)
     }
   }
 
@@ -38,8 +35,12 @@ class MemShiftRegisterTests( c : MemShiftRegister[Vec[SInt]] ) extends PeekPokeT
 
     step( 1 )
     if ( vld && inIdx >= c.n ) {
-      for ( i <- 0 until c.io.in.size )
-        expect( c.io.out( i ), tmpsr( outIdx )(i) )
+      for ( i <- 0 until c.io.in.size ) {
+        if ( c.io.in.head.isInstanceOf[SInt] && tmpsr( outIdx )( i ) >= ( 1 << ( bitWidth - 1 ) ) )
+          expect( c.io.out( i ), tmpsr( outIdx )(i) - BigInt( 1 <<  bitWidth ) )
+        else
+          expect( c.io.out( i ), tmpsr( outIdx )(i) )
+      }
       outIdx += 1
     }
   }
@@ -47,12 +48,14 @@ class MemShiftRegisterTests( c : MemShiftRegister[Vec[SInt]] ) extends PeekPokeT
 
 class MemShiftRegisterSuite extends ChiselFlatSpec {
 
+  val bitWidth = 4
+  val dataType = SInt( bitWidth.W )
   behavior of "MemShiftRegister"
   backends foreach {backend =>
     it should s"correctly compute the memshiftregister $backend" in {
       Driver(() => {
-        new MemShiftRegister( Vec( 64, SInt( 16.W ).cloneType ), 32 )
-      }, "verilator", true )( c => new MemShiftRegisterTests( c ) ) should be (true)
+        new MemShiftRegister( Vec( 64, dataType ), 32 )
+      }, "verilator", true )( c => new MemShiftRegisterTests( c, bitWidth ) ) should be (true)
     }
   }
 }

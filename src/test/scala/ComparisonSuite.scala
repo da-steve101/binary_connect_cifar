@@ -7,6 +7,8 @@ import chisel3.iotesters.{PeekPokeTester, Driver, ChiselFlatSpec}
 import scala.util.Random
 import binconcifar.SparseMatMul
 import binconcifar.SparseMatMulSerial
+import binconcifar.SimpleBufferLayer
+import binconcifar.Im2Col
 import binconcifar.TriConvSum
 import scala.collection.mutable.ArrayBuffer
 
@@ -32,15 +34,25 @@ class ComparisonModule extends Module {
       256
   }
   val dtype = SInt( 16.W )
-  val outFormat = ( 3, 3, 3 )
+  val kernelSize = 3
+  val outFormat = ( kernelSize, kernelSize, inSize )
   val tPutLyr = 0.25
   val fanoutReg = 1
+  val imgSize = 32
+  val inputCycle = ( 1 / tPutLyr ).toInt
 
   val io = IO( new Bundle {
-    val dataIn = Flipped( Decoupled( Vec( inSize*3*3, dtype ) ) )
+    val dataIn = Flipped( Decoupled( Vec( inSize, dtype ) ) )
     val dataOut_s = Valid( Vec( outSize, dtype ) )
     val dataOut_orig = Valid( Vec( outSize, dtype ) )
   })
+
+  val bfLyr = Module( new SimpleBufferLayer( dtype, imgSize, inSize, outFormat, 10, 1, true, 1 ) )
+  val cmLyr = Module( new Im2Col( dtype, imgSize, inSize, kernelSize, 10, 1, true, tPutLyr, 1 ) )
+
+  bfLyr.io.dataIn <> io.dataIn
+  cmLyr.io.dataIn.valid := io.dataIn.valid
+  cmLyr.io.dataIn.bits := io.dataIn.bits
 
   // val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_tern_op_list.csv" )
   // val bufferedSource = scala.io.Source.fromFile("src/main/resources/cifar_layer" + idx + "_op_list.csv" )
@@ -57,7 +69,7 @@ class ComparisonModule extends Module {
   val weights_raw = bufferedSource_2.getLines.toList
   val weights = weights_raw.map( _.split(",").toList.map( x => {
     x.toInt
-  }) ).grouped( outFormat._3 ).toList.grouped( outFormat._2 ).toList
+  }) ).grouped( kernelSize ).toList.grouped( kernelSize ).toList
   val weights_trans = ( 0 until outSize ).toList.map( i =>
     weights.map( w0 => w0.map( w1 => w1.map( w2 => w2(i) ) ) )
   ).map( x => x.map( _.reverse ).reverse )
@@ -68,20 +80,19 @@ class ComparisonModule extends Module {
   val conv_orig = Module( new TriConvSum( dtype, weights_trans, tPutLyr, fanoutReg ) )
 
   // reorder bits in to match triconvsum
-  val modOrder = Vec( io.dataIn.bits.grouped(inSize).toList.reverse.reduce( _ ++ _ ) )
+  val modOrder = Vec( cmLyr.io.dataOut.bits.grouped(inSize).toList.reverse.reduce( _ ++ _ ) )
   conv_s.io.dataIn.bits := modOrder
-  conv_s.io.dataIn.valid := io.dataIn.valid
-  conv_orig.io.dataIn.bits := io.dataIn.bits
-  conv_orig.io.dataIn.valid := io.dataIn.valid
+  conv_s.io.dataIn.valid := cmLyr.io.dataOut.valid
+  conv_orig.io.dataIn <> bfLyr.io.dataOut
 
   io.dataOut_s.bits := conv_s.io.dataOut.bits
   io.dataOut_s.valid := conv_s.io.dataOut.valid
-  conv_s.io.dataOut.ready := true.B
+  // conv_s.io.dataOut.ready := true.B
   io.dataOut_orig.bits := conv_orig.io.dataOut.bits
   io.dataOut_orig.valid := conv_orig.io.dataOut.valid
   conv_orig.io.dataOut.ready := true.B
 
-  io.dataIn.ready := conv_s.io.dataIn.ready && conv_orig.io.dataIn.ready
+  io.dataIn.ready := conv_orig.io.dataIn.ready
 
   val latency = 10
 }
@@ -89,7 +100,7 @@ class ComparisonModule extends Module {
 class ComparisonTests( c : ComparisonModule ) extends PeekPokeTester( c ) {
 
   val myRand = new Random
-  val cycs = 10*4
+  val cycs = (2 * c.imgSize * c.imgSize / c.tPutLyr).toInt
 
   def getRndFP() : BigInt = {
     val x = 2 * myRand.nextDouble() - 1
@@ -97,9 +108,9 @@ class ComparisonTests( c : ComparisonModule ) extends PeekPokeTester( c ) {
   }
 
   val img = ( 0 until cycs ).toList.map( x => {
-    List.fill( c.inSize * 3 * 3 ) { getRndFP() }
+    // List.fill( c.inSize * 3 * 3 ) { getRndFP() }
     // List.fill( 1 ) { BigInt(1) } ++ List.fill( c.inSize - 1 ){ BigInt(0) }
-    // List.fill( c.inSize * 3 * 3 ) { BigInt(1) }
+    List.fill( c.inSize ) { BigInt( x % 128 ) }
   })
 
   val sparse_res = ArrayBuffer[List[BigInt]]()
@@ -107,14 +118,21 @@ class ComparisonTests( c : ComparisonModule ) extends PeekPokeTester( c ) {
 
   poke( c.io.dataIn.valid, true )
   var inputPtr = 0
+  var inCyc = 0
   for ( cyc <- 0 until cycs ) {
     val imgData = img(inputPtr)
-    println( "imgData = " + imgData )
+    if ( inCyc == 0 )
+      poke( c.io.dataIn.valid, true )
+    else
+      poke( c.io.dataIn.valid, false )
     for ( dataIn1 <- c.io.dataIn.bits.zip( imgData ) )
       poke( dataIn1._1, dataIn1._2 )
 
-    if ( peek( c.io.dataIn.ready ) == BigInt( 1 ) )
+    inCyc = inCyc + 1
+    if ( /* peek( c.io.dataIn.ready ) == BigInt( 1 ) && */ inCyc % c.inputCycle == 0 ) {
       inputPtr = inputPtr + 1
+      inCyc = 0
+    }
 
     val data_s_vld = peek( c.io.dataOut_s.valid ) == 1
     // val dataOut_s = ( 0 until c.outSize ).map( i => peek( c.io.dataOut_s.bits( i ) ) )

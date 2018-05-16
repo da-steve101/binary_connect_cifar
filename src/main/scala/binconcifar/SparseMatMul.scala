@@ -14,11 +14,9 @@ class SparseMatMul(
   val noInputs = treeDefinition.head.head
 
   val io = IO( new Bundle {
-    val dataIn = Flipped(Decoupled( Vec( noInputs, dtype.cloneType ) ))
-    val dataOut = Decoupled( Vec( outputIdxs.size, dtype.cloneType ) )
+    val dataIn = Flipped(Valid( Vec( noInputs, dtype.cloneType ) ))
+    val dataOut = Valid( Vec( outputIdxs.size, dtype.cloneType ) )
   })
-
-  io.dataIn.ready := io.dataOut.ready
 
   val noNodes = treeDefinition.last.head + 1
   val treeNodes = Wire( Vec( noNodes, dtype.cloneType ) )
