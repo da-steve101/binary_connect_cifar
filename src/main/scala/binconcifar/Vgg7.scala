@@ -55,8 +55,6 @@ class Vgg7( dtype : SInt ) extends Module {
 
     val tPutInt = math.max( tPutLyr, 1 ).toInt
     val blMod = Module( new Im2Col( dtype, imgSize, grpSize, kernelSize, 10, 1, true, tPutLyr, 1, noFifo = noFifo ) )
-    val smm = Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
-    val smms = Module( new SparseMatMulSerial( dtype, treeDefinition, outputIdxs, (16 * tPutLyr).toInt, fanoutReg ) )
 
     val scaleShift = Module( new ScaleAndShift(
       dtype,
@@ -67,16 +65,22 @@ class Vgg7( dtype : SInt ) extends Module {
       tPutInt
     ) )
 
-    blMod.io.dataIn <> inputVec
+    blMod.io.dataIn.bits := inputVec.bits
+    blMod.io.dataIn.valid := inputVec.valid
+    inputVec.ready := true.B
     val modOrder = Vec( blMod.io.dataOut.bits.grouped(grpSize).toList.reverse.reduce( _ ++ _ ) )
     if ( tPutLyr >= 1 ){
-      smm.io.dataIn.bits := modOrder
+      val smm = Module( new SparseMatMul( dtype, treeDefinition, outputIdxs ) )
+      smm.io.dataIn.bits := Vec( modOrder.map( _.toSInt ) )
       smm.io.dataIn.valid := blMod.io.dataOut.valid
-      scaleShift.io.dataIn <> smm.io.dataOut
+      scaleShift.io.dataIn.bits := smm.io.dataOut.bits
+      scaleShift.io.dataIn.valid := smm.io.dataOut.valid
     } else {
+      val smms = Module( new SparseMatMulSerial( dtype, treeDefinition, outputIdxs, (16 * tPutLyr).toInt, fanoutReg ) )
       smms.io.dataIn.bits := modOrder
       smms.io.dataIn.valid := blMod.io.dataOut.valid
-      scaleShift.io.dataIn <> smms.io.dataOut
+      scaleShift.io.dataIn.bits := smms.io.dataOut.bits
+      scaleShift.io.dataIn.valid := smms.io.dataOut.valid
     }
 
     // blMod.io.dataOut.ready := conv1.io.dataIn.ready
