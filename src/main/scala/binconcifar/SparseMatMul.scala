@@ -89,7 +89,7 @@ class SparseMatMul(
       ( treeNodes( i ), nodeDelays( i ) )
   })
 
-  val latency = outputs.map( _._2 ).max
+  val latency = outputs.map( _._2 ).max + 1
 
   io.dataOut.valid := ShiftRegister( io.dataIn.valid, latency, false.B, true.B )
 
