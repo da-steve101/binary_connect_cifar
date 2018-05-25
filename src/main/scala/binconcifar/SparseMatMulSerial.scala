@@ -126,12 +126,12 @@ class SparseMatMulSerial(
     outReg.reverse.reduce( _ ## _ ).asTypeOf( dtype )
   })
 
-  val latency = treeLatency + 2 + nIter - 1
+  val srOut = 1
+  val latency = treeLatency + 2 + nIter - 1 + srOut
 
-  io.dataOut.bits := Vec( unnibble )
+  io.dataOut.bits := ShiftRegister( Vec( unnibble ), 1 )
 
-  val vld = RegInit( false.B )
-  vld := ( nibCntr === ( nIter - 1 ).U )
+  val vld = ShiftRegister( nibCntr === ( nIter - 1 ).U, srOut + 1, false.B, true.B )
   io.dataOut.valid := vld
 
 }
