@@ -191,12 +191,15 @@ class DenseLayer( dtype : SInt, val tPut : Int, weights : Seq[Seq[Int]] ) extend
 
   // add pipeline stages before fanout
   val delayWeights = ShiftRegister( currWeights, 2 )
-  val delayActs = ShiftRegister( currActs, 3 )
+  // try fanout
+  val delayActs = Fanout( currActs, 3, delayWeights.size )
+  // val delayActs = ShiftRegister( currActs, 3 )
 
-  val summations = delayWeights.map( w => {
+  val summations = delayWeights.zipWithIndex.map( w => {
     val mac = Module( new MultiplyAccumulate( dtype, weightsWidth, tPut ) )
-    mac.io.activations := delayActs
-    mac.io.weights := w
+    for ( i <- 0 until delayActs.size )
+      mac.io.activations(i) := delayActs(i)( w._2 )
+    mac.io.weights := w._1
     ( mac.io.sum, mac.latency )
   }).toList
 

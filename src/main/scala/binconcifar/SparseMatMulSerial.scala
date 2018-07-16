@@ -31,8 +31,18 @@ class SparseMatMulSerial(
   when ( nibbleCntr > 0.U || io.dataIn.valid ) {
     nibbleCntr := nibbleCntr + 1.U
   }
-  val dataInBits = ShiftRegister( io.dataIn.bits, 2 )
-  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 1, false.B, true.B )
+  // calculate the number needed to fanout ...
+  val noFanout = ArrayBuffer.fill( noInputs ) { 0 }
+  for ( op <- treeDefinition ) {
+    for ( i <- List( 1, 2 ) ) {
+      if ( op(i) >= 0 && op(i) < noInputs )
+        noFanout(op(i)) = noFanout(op(i)) + 1
+    }
+  }
+  val dataInBits = Fanout( io.dataIn.bits, 3, noFanout.toList )
+  for ( i <- 0 until noInputs )
+    noFanout( i ) = 0
+  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 2, false.B, true.B )
 
   val startRegs = ArrayBuffer[Bool]()
   startRegs.append( startReg0 )
@@ -47,9 +57,10 @@ class SparseMatMulSerial(
     treeNodes( i ) := 0.U( 4.W )
 
   // connect inputs
+  /*
   for ( d <- dataInBits.zipWithIndex )
     treeNodes( d._2 ) := d._1
-
+   */
   def compute_op( op_code : Int, a : UInt, b : UInt, start : Bool ) : UInt = {
     if ( op_code == 0 || op_code == 1 )
       return SerialAdder.negate( a, b, start, bitWidth )._1
@@ -64,15 +75,23 @@ class SparseMatMulSerial(
     if ( op_idx < 0 )
       return 0.U
     val start = startRegs( nodeDelays( op_idx ) )
+    val a = {
+      if ( op_idx < noInputs ) {
+        noFanout( op_idx ) = noFanout( op_idx ) + 1
+        dataInBits( op_idx )( noFanout( op_idx ) - 1 )
+      } else {
+        treeNodes( op_idx )
+      }
+    }
     if ( shift_no == 0 )
-      return treeNodes( op_idx )
+      return a
     if ( shift_no > 0 ) {
       val prevBits = Reg( 0.U( shift_no.W ).cloneType )
-      prevBits := treeNodes( op_idx )( bitWidth - 1, bitWidth - shift_no )
+      prevBits := a( bitWidth - 1, bitWidth - shift_no )
       val outputBits = Wire( 0.U( bitWidth.W ).cloneType )
-      outputBits := treeNodes( op_idx )(bitWidth - shift_no - 1,0) ## prevBits
+      outputBits := a(bitWidth - shift_no - 1,0) ## prevBits
       when ( start ) {
-        outputBits := treeNodes( op_idx )(bitWidth - shift_no - 1,0) ## 0.U( shift_no.W )
+        outputBits := a(bitWidth - shift_no - 1,0) ## 0.U( shift_no.W )
       }
       return outputBits
     }
@@ -129,7 +148,7 @@ class SparseMatMulSerial(
   val srOut = 1
   val latency = treeLatency + 2 + nIter - 1 + srOut
 
-  io.dataOut.bits := ShiftRegister( Vec( unnibble ), 1 )
+  io.dataOut.bits := ShiftRegister( Vec( unnibble ), srOut )
 
   val vld = ShiftRegister( nibCntr === ( nIter - 1 ).U, srOut + 1, false.B, true.B )
   io.dataOut.valid := vld
