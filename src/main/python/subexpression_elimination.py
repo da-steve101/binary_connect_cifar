@@ -5,7 +5,17 @@ import numpy as np
 import sys
 import math
 
-def get_pattern_mat( matrix, pattern_matrix, update_idxs ):
+def get_pattern_mat( matrix, pattern_matrix, update_idxs, rm_idxs ):
+    rm_idxs = [ x for x in rm_idxs ]
+    rm_idxs = sorted( rm_idxs, reverse=True )
+    for idx in rm_idxs:
+        del pattern_matrix[idx]
+        for i in range( 0, idx ):
+            del pattern_matrix[i][0][idx - i - 1]
+            del pattern_matrix[i][1][idx - i - 1]
+    # change update_idxs now those idxs have been removed
+    for idx in rm_idxs:
+        update_idxs = [ x if x < idx else x - 1 for x in update_idxs ]
     for idx in update_idxs:
         if len(pattern_matrix) <= idx:
             pattern_matrix += [[[-1],[-1],-1]] # just filler
@@ -20,6 +30,7 @@ def get_pattern_mat( matrix, pattern_matrix, update_idxs ):
             else:
                 pattern_matrix[i][0][idx - i - 1] = res_mat_pos_sum[i]
                 pattern_matrix[i][1][idx - i - 1] = res_mat_neg_sum[i]
+        for i in range( idx ):
             pattern_matrix[i][2] = max( pattern_matrix[i][0] + pattern_matrix[i][1] )
         if matrix.shape[0] > idx + 1:
             pattern_matrix[idx] = [ res_mat_pos_sum.tolist()[idx+1:],
@@ -39,6 +50,22 @@ def get_common_idx( pattern_matrix ):
                 if x == max_common:
                     common_idxs += [ (idx, j + idx + 1, False) ]
     return max_common, common_idxs
+
+def find_finished_idxs( pattern_matrix ):
+    rm_idxs = set( range( len( pattern_matrix ) ) )
+    for i, row in enumerate( pattern_matrix ):
+        # not the last row ...
+        if ( row[2] < 0 or row[2] > 1 ) and i in rm_idxs:
+            rm_idxs.remove(i)
+    for i, row in enumerate( pattern_matrix ):
+        for rowidx in [0,1]:
+            for j, x in enumerate(row[rowidx]):
+                if x > 1:
+                    if i in rm_idxs:
+                        rm_idxs.remove(i)
+                    if i+j+1 in rm_idxs:
+                        rm_idxs.remove(i+j+1)
+    return rm_idxs
 
 def reorder_pattern( pattern ):
     pat_sum = np.sum( pattern )
@@ -113,7 +140,7 @@ def find_most_common( matrix, common_idxs ):
         res_neg += tmp_neg
     return pattern, list(set(res_pos)), list(set(res_neg))
 
-def update_matrix( matrix, idxs_pos, idxs_neg, pattern ):
+def update_matrix( matrix, idxs_pos, idxs_neg, pattern, rm_idxs ):
     # first eliminate common expr
     for i in idxs_pos:
         matrix[i,:] = matrix[i,:] - pattern
@@ -127,7 +154,9 @@ def update_matrix( matrix, idxs_pos, idxs_neg, pattern ):
         matrix[i,-1] = 1
     for i in idxs_neg:
         matrix[i,-1] = -1
-    return matrix
+    return_mat = [ ( matrix[i,:], i ) for i in rm_idxs ]
+    matrix = matrix[np.array( [ i for i in range( matrix.shape[0] ) if i not in set(rm_idxs) ] ),:]
+    return matrix, return_mat
 
 def is_intersection( existing_patterns, new_pattern ):
     p = np.absolute( np.array( new_pattern ) )
@@ -161,9 +190,9 @@ def fast_update_pat_2_join( matrix, pattern_matrix ):
     update_idxs = []
     for i, p in chosen_idxs:
         res_pos, res_neg = get_pos_neg( common_idxs[i], negations[i] )
-        pattern = np.concatenate( ( np.array( p ), np.array( [0]*no_pad ) ) )
+        pattern = np.concatenate( ( np.array( p, dtype = np.int16 ), np.array( [0]*no_pad, dtype = np.int16 ) ) )
         no_pad += 1
-        matrix = update_matrix( matrix, res_pos, res_neg, pattern )
+        matrix, return_mat = update_matrix( matrix, res_pos, res_neg, pattern, [] )
         update_idxs += res_pos + res_neg
     update_idxs = list(set(update_idxs)) + list(range( matrix.shape[0] - no_pad, matrix.shape[0] ))
     update_idxs.sort()
@@ -171,23 +200,38 @@ def fast_update_pat_2_join( matrix, pattern_matrix ):
 
 def subexpression_elimination( matrix ):
     pattern_matrix = []
+    finished_rows = []
     update_idxs = list( range( matrix.shape[0] ) )
+    rm_idxs = []
     most_common_count = 3
     pattern_pos = []
     pattern_neg = []
+    # orig_mat = matrix.copy()
     while most_common_count > 1:
+        pattern_matrix = get_pattern_mat( matrix, pattern_matrix, update_idxs, rm_idxs )
         if most_common_count > 2 or len(pattern_pos) + len(pattern_neg) > 2:
-            pattern_matrix = get_pattern_mat( matrix, pattern_matrix, update_idxs )
             most_common_count, common_idxs = get_common_idx( pattern_matrix )
             pattern, pattern_pos, pattern_neg = find_most_common( matrix, common_idxs )
-            matrix = update_matrix( matrix, pattern_pos, pattern_neg, pattern )
-            update_idxs = pattern_pos + pattern_neg + [matrix.shape[0]-1]
+            rm_idxs = find_finished_idxs( pattern_matrix )
+            matrix, return_mat = update_matrix( matrix, pattern_pos, pattern_neg, pattern, rm_idxs )
+            finished_rows = return_mat + finished_rows
+            ''' verify result
+            new_mat = matrix.copy()
+            for x, i in finished_rows:
+                tmp = np.concatenate( ( np.array( x, dtype=np.int16 ),  np.zeros( ( new_mat.shape[1] - len(x) ), dtype = np.int16 ) ) )
+                new_mat = np.vstack( [ new_mat[:i,:], tmp, new_mat[i:,:] ] )
+            assert reverse_check_result( orig_mat, new_mat ), "must have same matrix originally"
+            '''
+            update_idxs = pattern_pos + pattern_neg + [matrix.shape[0] + len(return_mat) - 1]
             print( str(len(pattern_pos) + len(pattern_neg)) +
                    " expressions have a common subexpression of size "
                    + str(most_common_count) + " to be eliminated"  )
         else:
-            pattern_matrix = get_pattern_mat( matrix, pattern_matrix, update_idxs )
+            rm_idxs = []
             most_common_count, matrix, update_idxs = fast_update_pat_2_join( matrix, pattern_matrix )
+    for x, i in finished_rows:
+        tmp = np.concatenate( ( np.array( x, dtype=np.int16 ),  np.zeros( ( matrix.shape[1] - len(x) ), dtype = np.int16 ) ) )
+        matrix = np.vstack( [ matrix[:i,:], tmp, matrix[i:,:] ] )
     return matrix
 
 def size_of_tree( matrix ):
@@ -278,16 +322,29 @@ def make_tree( matrix, no_in, no_out ):
                         output_depths[ x ] = curr_d
                         op_list += new_ops
     return op_list, [ outputs[i] for i in range( no_out ) ]
-    
+
+def reverse_check_result( orig_mat, new_mat ):
+    no_in = orig_mat.shape[1]
+    no_out = orig_mat.shape[0]
+    # replace elim outputs with full expression
+    for i in range( new_mat.shape[0] - no_out ):
+        vec = new_mat[no_out+i,:]
+        for j in range( new_mat.shape[0] ):
+            new_mat[j,:] = new_mat[j,:] + new_mat[j,no_in+i]*vec
+        new_mat[no_out+i,:] = new_mat[no_out+i,:] - vec
+    return np.sum( new_mat[:no_out,:no_in] == orig_mat ) == no_in*no_out
 
 if __name__ == "__main__":
     conv_idx = int( sys.argv[1] )
     f = open( "../resources/conv" + str(conv_idx) + "_weights.csv" )
+    # f = open( "../resources/fc_1024_weights.csv" )
+    # f = open( "../resources/softmax_weights.csv" )
     rdr = csv.reader( f )
     data = [ [ int(y) for y in x ] for x in rdr ]
     matrix = np.transpose( np.array( data, dtype = np.int16 ) )
     no_in = matrix.shape[1]
     no_out = matrix.shape[0]
+    print( "no_in = " + str(no_in) + ", no_out = " + str(no_out) )
     initial_no_adds = size_of_tree( matrix )
     print( "initial matrix is " + str( initial_no_adds  ) )
     matrix = subexpression_elimination( matrix )
