@@ -182,7 +182,7 @@ class SimpleBufferLayer[ T <: SInt](
     io.dataOut.valid := vldSet
   } else {
     io.dataOut.bits := Vec( dataOut.reduce( _ ++ _ ).reduce( _ ++ _ ).map( _.toList ).reduce( _ ++ _ ) )
-    // need to supress vld on odd strides
+    // need to suppress vld on odd strides
     io.dataOut.valid := vld & !colCntr._1(0)
   }
 }
