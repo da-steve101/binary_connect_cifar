@@ -59,12 +59,10 @@ def find_finished_idxs( pattern_matrix ):
             rm_idxs.remove(i)
     for i, row in enumerate( pattern_matrix ):
         for rowidx in [0,1]:
-            for j, x in enumerate(row[rowidx]):
+            for j in [ j for j in rm_idxs if i < j ]:
+                x = row[rowidx][j-i-1]
                 if x > 1:
-                    if i in rm_idxs:
-                        rm_idxs.remove(i)
-                    if i+j+1 in rm_idxs:
-                        rm_idxs.remove(i+j+1)
+                    rm_idxs.remove(j)
     return rm_idxs
 
 def reorder_pattern( pattern ):
