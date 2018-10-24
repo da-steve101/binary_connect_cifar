@@ -2,9 +2,9 @@ import subexpression_elimination as se
 import numpy as np
 import math
 import sys
-import numpy_indexed as npi
 
 def get_idx( i, j, no_in ):
+    assert i != j and i < j, "Invalid index"
     return int(i*no_in - i*(i+1)/2 + j - i - 1)
 
 def idx_to_ij( idx, no_in ):
@@ -20,9 +20,9 @@ def copy_across( same_in, diff_in, no_in ):
     same_out = np.ones( int(no_in * ( no_in - 1 ) / 2), dtype=np.int16 )
     diff_out = np.ones( int(no_in * ( no_in - 1 ) / 2), dtype=np.int16 )
     for i in range( 0, no_in - 1 ):
-        start_out = get_idx( i, 0, no_in )
+        start_out = get_idx( i, i + 1, no_in )
         stop_out = start_out + no_in - 2 - i
-        start_in = get_idx( i, 0, no_in - 1 )
+        start_in = get_idx( i, i + 1, no_in - 1 )
         stop_in = start_in + no_in - 2 - i
         same_out[start_out:stop_out] = same_in[start_in:stop_in]
         diff_out[start_out:stop_out] = diff_in[start_in:stop_in]
