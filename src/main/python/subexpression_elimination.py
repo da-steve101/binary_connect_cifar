@@ -42,12 +42,12 @@ def get_common_idx( pattern_matrix ):
     max_common = np.max( [ x[2] for x in pattern_matrix ] )
     common_idxs = []
     for idx, x in enumerate( pattern_matrix ):
-        if x[2] == max_common:
+        if x[2] >= max_common:
             for j, x in enumerate( pattern_matrix[idx][0] ):
-                if x == max_common:
+                if x >= max_common:
                     common_idxs += [ (idx, j + idx + 1, True) ]
             for j, x in enumerate( pattern_matrix[idx][1] ):
-                if x == max_common:
+                if x >= max_common:
                     common_idxs += [ (idx, j + idx + 1, False) ]
     return max_common, common_idxs
 
@@ -66,15 +66,12 @@ def find_finished_idxs( pattern_matrix ):
     return rm_idxs
 
 def reorder_pattern( pattern ):
-    pat_sum = np.sum( pattern )
-    if pat_sum < 0:
-        return ( -pattern, True )
-    elif pat_sum == 0:
-        for x in pattern:
-            if x > 0:
-                return ( pattern, False )
-            if x < 0:
-                return ( -pattern, True )
+    # flip so the first number is positive
+    for x in pattern:
+        if x > 0:
+            return ( pattern, False )
+        if x < 0:
+            return ( -pattern, True )
     return ( pattern, False )
 
 def get_patterns_and_negations( matrix, common_idxs ):
@@ -250,6 +247,25 @@ def create_stage( curr_idx, idxs ):
         op_list += [ op_new ]
     return op_list, curr_idx
 
+def create_stage_ternary( curr_idx, idxs ):
+    # group by 3 and create ops
+    op_list = []
+    for i in range( int( math.ceil( len(idxs) / 3 ) ) ):
+        a = idxs[3*i]
+        if len(idxs) < 3*i+2:
+            b = [ -1, 0, False ]
+        else:
+            b = idxs[3*i + 1]
+        if len(idxs) < 3*i+3:
+            c = [ -1, 0, False ]
+        else:
+            c = idxs[3*i + 2]
+        add_op = 4*a[2] + 2*b[2] + 1*c[2]
+        op_new = [ curr_idx, a[0], b[0], c[0], add_op, 0, 0, 0 ]
+        curr_idx += 1
+        op_list += [ op_new ]
+    return op_list, curr_idx
+
 def create_ops_for_tree( curr_idx, idxs_in ):
     # idxs_in = [ ( idx, depth_avail, is_pos ) ]
     curr_d = 0
@@ -260,7 +276,8 @@ def create_ops_for_tree( curr_idx, idxs_in ):
     while len(reserves) > 0 or len(curr_idxs) > 1 or len(op_list) < 1:
         reserves = [ x for x in curr_idxs if x[1] > curr_d ]
         to_reduce = [ x for x in curr_idxs if x[1] <= curr_d ]
-        reduced_ops, curr_idx = create_stage( curr_idx, to_reduce )
+        # reduced_ops, curr_idx = create_stage( curr_idx, to_reduce )
+        reduced_ops, curr_idx = create_stage_ternary( curr_idx, to_reduce )
         curr_idxs = [ ( x[0], curr_d + 1, True )  for x in reduced_ops ] + reserves
         op_list += reduced_ops
         curr_d += 1
@@ -332,11 +349,8 @@ def reverse_check_result( orig_mat, new_mat ):
         new_mat[no_out+i,:] = new_mat[no_out+i,:] - vec
     return np.sum( new_mat[:no_out,:no_in] == orig_mat ) == no_in*no_out
 
-if __name__ == "__main__":
-    conv_idx = int( sys.argv[1] )
-    f = open( "../resources/conv" + str(conv_idx) + "_weights.csv" )
-    # f = open( "../resources/fc_1024_weights.csv" )
-    # f = open( "../resources/softmax_weights.csv" )
+def get_matrix( fname ):
+    f = open( fname )
     rdr = csv.reader( f )
     data = [ [ int(y) for y in x ] for x in rdr ]
     matrix = np.transpose( np.array( data, dtype = np.int16 ) )
@@ -345,19 +359,33 @@ if __name__ == "__main__":
     print( "no_in = " + str(no_in) + ", no_out = " + str(no_out) )
     initial_no_adds = size_of_tree( matrix )
     print( "initial matrix is " + str( initial_no_adds  ) )
-    matrix = subexpression_elimination( matrix )
+    return matrix, no_in, no_out, initial_no_adds
+
+def write_output( fname, matrix, initial_no_adds, no_in, no_out ):
     final_no_adds = size_of_tree( matrix )
     print( "improvement is from " + str( initial_no_adds ) + " to " +
            str( final_no_adds ) + " or " + str( final_no_adds*100/initial_no_adds ) + "%" )
-    f_out = open( "../resources/conv" + str(conv_idx) + "_weights_tree.csv", "w" )
+    f_out = open( fname + "_weights_tree.csv", "w" )
     wrt = csv.writer( f_out )
     for x in np.transpose( matrix ):
         tmp = wrt.writerow( x )
     f_out.close()
-    f_out = open( "../resources/conv" + str(conv_idx) + "_tern_op_list.csv", "w" )
+    f_out = open( fname + "_tern_op_list.csv", "w" )
     wrt = csv.writer( f_out )
     tree_ops, outputs = make_tree( np.transpose( matrix ), no_in, no_out )
     tmp = wrt.writerow( outputs )
     for x in tree_ops:
         tmp = wrt.writerow( x )
     f_out.close()
+
+if __name__ == "__main__":
+    conv_idx = int( sys.argv[1] )
+    fname_out = "../resources/conv" + str(conv_idx)
+    fname = fname_out + "_weights.csv"
+    # fname_out = "../resources/mat" + str(conv_idx)
+    # fname = fname_out + ".csv"
+    # fname = "../resources/fc_1024_weights.csv"
+    # fname = "../resources/softmax_weights.csv"
+    matrix, no_in, no_out, initial_no_adds = get_matrix( fname )
+    matrix = subexpression_elimination( matrix )
+    write_output( fname_out, matrix, initial_no_adds, no_in, no_out )
