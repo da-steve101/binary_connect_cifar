@@ -21,9 +21,9 @@ def copy_across( same_in, diff_in, no_in ):
     diff_out = np.ones( int(no_in * ( no_in - 1 ) / 2), dtype=np.int16 )
     for i in range( 0, no_in - 1 ):
         start_out = get_idx( i, i + 1, no_in )
-        stop_out = start_out + no_in - 2 - i
+        stop_out = get_idx( i, no_in - 1, no_in )
         start_in = get_idx( i, i + 1, no_in - 1 )
-        stop_in = start_in + no_in - 2 - i
+        stop_in = get_idx( i, no_in - 1, no_in - 1 )
         same_out[start_out:stop_out] = same_in[start_in:stop_in]
         diff_out[start_out:stop_out] = diff_in[start_in:stop_in]
     return same_out, diff_out

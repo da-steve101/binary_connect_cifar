@@ -237,7 +237,7 @@ def create_stage( curr_idx, idxs ):
     op_list = []
     for i in range( int( math.ceil( len(idxs) / 2 ) ) ):
         a = idxs[2*i]
-        if len(idxs) < 2*(i+1):
+        if len(idxs) < 2*i+2:
             b = [ -1, 0, False ]
         else:
             b = idxs[2*i + 1]
@@ -266,13 +266,13 @@ def create_stage_ternary( curr_idx, idxs ):
         op_list += [ op_new ]
     return op_list, curr_idx
 
-def create_ops_for_tree( curr_idx, idxs_in ):
-    # idxs_in = [ ( idx, depth_avail, is_pos ) ]
+def create_ops_for_tree( curr_idx, curr_idxs ):
+    # curr_idxs = [ ( idx, depth_avail, is_pos ) ]
+    if len(curr_idxs) == 0:
+        return ( [], curr_idx, -1, 0 )
     curr_d = 0
     op_list = []
-    max_add_d = max( [ x[1] for x in idxs_in ] )
-    curr_idxs = idxs_in
-    reserves = [1]
+    reserves = []
     while len(reserves) > 0 or len(curr_idxs) > 1 or len(op_list) < 1:
         reserves = [ x for x in curr_idxs if x[1] > curr_d ]
         to_reduce = [ x for x in curr_idxs if x[1] <= curr_d ]
@@ -284,58 +284,53 @@ def create_ops_for_tree( curr_idx, idxs_in ):
     output_idx = op_list[-1][0]
     return op_list, curr_idx, output_idx, curr_d
 
+def combine_dep( dep_a, dep_b ):
+    for x in dep_b:
+        dep_a[x] = dep_b[x]
+    return dep_a
+
+def get_dependancies( idxs, matrix, no_in, no_out ):
+    dependancies = {}
+    for i in idxs:
+        dependancies[ i ] = list( np.nonzero( matrix[no_in:,i] )[0] + no_out )
+        dependancies = combine_dep( dependancies,
+                                    get_dependancies( dependancies[ i ], matrix, no_in, no_out )
+        )
+    return dependancies
+
 def make_tree( matrix, no_in, no_out ):
     dependancies = {}
-    for j, row in enumerate([ abs( matrix[no_in:,i] ) for i in range( matrix.shape[1] ) ]):
-        dependancies[j] = list(np.nonzero( row )[0] + no_out)
     output_depths = {}
+    # for j, row in enumerate([ abs( matrix[:,i] ) for i in range( matrix.shape[1] ) ]):
+    #    dependancies[j] = list(np.nonzero( row[no_in:] )[0] + no_out)
+    for j in range( no_out ):
+        idxs = list( np.nonzero( matrix[no_in:,j] )[0] + no_out )
+        dependancies[j] = idxs
+        dependancies = combine_dep( dependancies,
+                                    get_dependancies( idxs, matrix, no_in, no_out ) )
     outputs = {}
     op_list = []
     op_idx = no_in
-    while len( outputs ) < matrix.shape[1]:
+    while len( outputs ) < len(dependancies): #matrix.shape[1]:
         for x in dependancies:
-            if x not in outputs:
-                if len(dependancies[x]) == 0:
-                    mat_cnt = sum( abs( matrix[:,x] ) )
-                    if mat_cnt == 0:
-                        outputs[x] = -1
-                        output_depths[x] = 0
-                    else:
-                        # make the ops
-                        idxs = [ i for i, y in enumerate( matrix[:,x] ) if y != 0 ]
-                        idxs_in = []
-                        for i in idxs:
-                            j = i
-                            d = 0
-                            is_pos = True
-                            assert i < no_in, "For no dependancies, should have i < no_in"
-                            if matrix[i,x] == -1:
-                                is_pos = False
-                            idxs_in += [ (j, d, is_pos) ]
-                        new_ops, op_idx, output_idx, curr_d = create_ops_for_tree( op_idx, idxs_in )
-                        outputs[ x ] = output_idx
-                        output_depths[ x ] = curr_d
-                        op_list += new_ops
-                else:
-                    dep_depths = [ output_depths[ y ] for y in dependancies[x] if y in output_depths ]
-                    dep_depths.sort()
-                    if len( dep_depths ) == len(dependancies[x]):
-                        idxs = [ i for i, y in enumerate( matrix[:,x] ) if y != 0 ]
-                        idxs_in = []
-                        for i in idxs:
-                            j = i
-                            d = 0
-                            is_pos = True
-                            if i >= no_in:
-                                j = outputs[ i + no_out - no_in ]
-                                d = output_depths[ i + no_out - no_in ]
-                            if matrix[i,x] == -1:
-                                is_pos = False
-                            idxs_in += [ (j, d, is_pos) ]
-                        new_ops, op_idx, output_idx, curr_d = create_ops_for_tree( op_idx, idxs_in )
-                        outputs[ x ] = output_idx
-                        output_depths[ x ] = curr_d
-                        op_list += new_ops
+            if x not in outputs: # haven't already done
+                # check all dependancies are resolved otherwise skip for now
+                dep_depths = [ output_depths[ y ] for y in dependancies[x] if y in output_depths ]
+                if len( dep_depths ) == len(dependancies[x]):
+                    idxs = np.nonzero( matrix[:,x] )[0]
+                    idxs_in = []
+                    for i in idxs:
+                        j = i
+                        d = 0
+                        if i >= no_in:
+                            j = outputs[ i + no_out - no_in ]
+                            d = output_depths[ i + no_out - no_in ]
+                        assert matrix[i,x] != 0, "has dependancy with zero?"
+                        idxs_in += [ (j, d, matrix[i,x] > 0) ]
+                    new_ops, op_idx, output_idx, curr_d = create_ops_for_tree( op_idx, idxs_in )
+                    outputs[ x ] = output_idx
+                    output_depths[ x ] = curr_d
+                    op_list += new_ops
     return op_list, [ outputs[i] for i in range( no_out ) ]
 
 def reverse_check_result( orig_mat, new_mat ):
@@ -377,7 +372,51 @@ def write_output( fname, matrix, initial_no_adds, no_in, no_out ):
     for x in tree_ops:
         tmp = wrt.writerow( x )
     f_out.close()
+    verify_tree( fname )
 
+def compute_op( a, b, c, op_code ):
+    if op_code == 0:
+      return - a - b - c
+    if op_code == 1:
+      return - a - b + c
+    if op_code == 2:
+      return - a + b - c
+    if op_code == 3:
+      return - a + b + c
+    if op_code == 4:
+      return a - b - c
+    if op_code == 5:
+      return a - b + c
+    if op_code == 6:
+      return a + b - c
+    return a + b + c
+
+def verify_tree( fname ):
+    matrix, no_in, no_out, initial_no_adds = get_matrix( fname + "_weights.csv" )
+    f_t = open( fname + "_tern_op_list.csv" )
+    rdr = csv.reader( f_t )
+    ops = [ [ int(y) for y in x ] for x in rdr ]
+    outputs = ops[0]
+    tmp_inputs = np.random.randint( -(1<<12), 1 << 12, no_in )
+    expected_out = np.matmul( matrix, tmp_inputs )
+    tmp_vals = {}
+    for op in ops[1:]:
+        a = tmp_inputs[op[1]] if op[1] not in tmp_vals else tmp_vals[op[1]]
+        if op[2] >= 0:
+            b = tmp_inputs[op[2]] if op[2] not in tmp_vals else tmp_vals[op[2]]
+        else:
+            b = 0
+        if op[3] >= 0:
+            c = tmp_inputs[op[3]] if op[3] not in tmp_vals else tmp_vals[op[3]]
+        else:
+            c = 0
+        tmp_vals[op[0]] = compute_op( a, b, c, op[4] )
+    for i, o in enumerate( outputs ):
+        if o < 0:
+            continue
+        assert expected_out[i] == tmp_vals[o], "must match expected output from tree for output " + str(o)
+    return True
+    
 if __name__ == "__main__":
     conv_idx = int( sys.argv[1] )
     fname_out = "../resources/conv" + str(conv_idx)
@@ -386,6 +425,7 @@ if __name__ == "__main__":
     # fname = fname_out + ".csv"
     # fname = "../resources/fc_1024_weights.csv"
     # fname = "../resources/softmax_weights.csv"
+
     matrix, no_in, no_out, initial_no_adds = get_matrix( fname )
     matrix = subexpression_elimination( matrix )
     write_output( fname_out, matrix, initial_no_adds, no_in, no_out )
