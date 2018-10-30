@@ -276,8 +276,8 @@ def create_ops_for_tree( curr_idx, curr_idxs ):
     while len(reserves) > 0 or len(curr_idxs) > 1 or len(op_list) < 1:
         reserves = [ x for x in curr_idxs if x[1] > curr_d ]
         to_reduce = [ x for x in curr_idxs if x[1] <= curr_d ]
-        # reduced_ops, curr_idx = create_stage( curr_idx, to_reduce )
-        reduced_ops, curr_idx = create_stage_ternary( curr_idx, to_reduce )
+        reduced_ops, curr_idx = create_stage( curr_idx, to_reduce )
+        # reduced_ops, curr_idx = create_stage_ternary( curr_idx, to_reduce )
         curr_idxs = [ ( x[0], curr_d + 1, True )  for x in reduced_ops ] + reserves
         op_list += reduced_ops
         curr_d += 1
@@ -338,10 +338,13 @@ def reverse_check_result( orig_mat, new_mat ):
     no_out = orig_mat.shape[0]
     # replace elim outputs with full expression
     for i in range( new_mat.shape[0] - no_out ):
-        vec = new_mat[no_out+i,:]
-        for j in range( new_mat.shape[0] ):
-            new_mat[j,:] = new_mat[j,:] + new_mat[j,no_in+i]*vec
-        new_mat[no_out+i,:] = new_mat[no_out+i,:] - vec
+        vec_idx_orig = np.nonzero( new_mat[no_out+i,:] )[0]
+        update_idx = np.nonzero( new_mat[:,no_in+i] )[0]
+        vec_idx = np.tile( vec_idx_orig, len(update_idx) )
+        update_idx = np.repeat( update_idx, len(vec_idx_orig) )
+        vec = new_mat[no_out+i,vec_idx]
+        new_mat[update_idx,vec_idx] += vec*new_mat[update_idx,no_in+i]
+        new_mat[no_out+i,vec_idx_orig] -= new_mat[no_out+i,vec_idx_orig]
     return np.sum( new_mat[:no_out,:no_in] == orig_mat ) == no_in*no_out
 
 def get_matrix( fname ):
