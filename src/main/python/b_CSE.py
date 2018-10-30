@@ -63,8 +63,8 @@ def find_common_2( matrix, update_idxs = [], prev_cnts_same = None, prev_cnts_di
     col_2_idxs = np.array( col_2_idxs )[filt_idx]
     col_1 = matrix[:,col_1_idxs]
     col_2 = matrix[:,col_2_idxs]
-    same_cnt = np.sum( ( col_1 == col_2 ) * np.abs( col_1 ) > 0, 0 ) # either (1,1) or (-1,-1)
-    diff_cnt = np.sum( ( col_1 == -col_2 ) * np.abs( col_1 ) > 0, 0 ) # either (1,-1) or (-1,1)
+    same_cnt = np.sum( ( col_1 == col_2 ) * np.abs(col_1), 0 )  # either (1,1) or (-1,-1)
+    diff_cnt = np.sum( ( col_1 == -col_2 ) * np.abs(col_1), 0 ) # either (1,-1) or (-1,1)
     counts_same[idxs] = same_cnt
     counts_diff[idxs] = diff_cnt
     print( "updated " + str(len(idxs)) + " values, skipped " + str(len(filt_idx) - len(idxs)) )
