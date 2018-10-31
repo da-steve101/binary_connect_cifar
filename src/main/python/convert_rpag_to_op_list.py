@@ -120,8 +120,8 @@ def move_neg_shifts( op_list, output_idx ):
     return op_list_new
 
 if __name__ == "__main__":
-    fname = "../resources/cifar_layer1_tern.rpag"
-    matname = "../resources/conv1_weights.csv"
+    fname = "../resources/cifar_layer2.rpag"
+    matname = "../resources/conv2_weights.csv"
     f = open( fname )
     lines = f.readlines()
     vals = parse_graph( lines )

@@ -1,8 +1,9 @@
 import csv
+import sys
 
 # open the tern op lists and output the avg add, avg reg, avg PAG
-def get_perf_mat( idx ):
-    f = open( "../resources/mat" + str(idx) + "_tern_op_list.csv" )
+def get_perf_mat( fname ):
+    f = open( fname )
     rdr = csv.reader( f )
     mat = [ [ int(x) for x in y ] for y in rdr ]
     outputs = set(mat[0])
@@ -22,14 +23,16 @@ def get_perf_mat( idx ):
     for o in outputs:
         if o > -1:
             reg_count += ( max_depth - logic_depths[o] )
-    return add_count, reg_count
+    return add_count, reg_count, add_count + reg_count
 
 if __name__ == "__main__":
-    res = [ get_perf_mat(i+1) for i in range(10) ]
-    # res = [ get_perf_mat(2) ]
-    adds = sum([ x[0] for x in res ])/len(res)
-    regs = sum([ x[1] for x in res ])/len(res)
-    print( "adds", adds )
-    print( "regs", regs )
-    print( "pag", adds + regs )
-    
+    fnames = sys.argv[1:]
+    res = [ get_perf_mat(f) for f in fnames ]
+    for f, r in zip( fnames, res ):
+        print( f )
+        print( "adds", r[0] )
+        print( "regs", r[1] )
+        print( "pag", r[2] )
+    print( "avg add", sum( [ r[0] for r in res ] )/len(res) )
+    print( "avg reg", sum( [ r[1] for r in res ] )/len(res) )
+    print( "avg pag", sum( [ r[0]+r[1] for r in res ] )/len(res) )

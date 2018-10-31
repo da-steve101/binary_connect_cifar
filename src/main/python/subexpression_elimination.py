@@ -276,8 +276,8 @@ def create_ops_for_tree( curr_idx, curr_idxs ):
     while len(reserves) > 0 or len(curr_idxs) > 1 or len(op_list) < 1:
         reserves = [ x for x in curr_idxs if x[1] > curr_d ]
         to_reduce = [ x for x in curr_idxs if x[1] <= curr_d ]
-        reduced_ops, curr_idx = create_stage( curr_idx, to_reduce )
-        # reduced_ops, curr_idx = create_stage_ternary( curr_idx, to_reduce )
+        # reduced_ops, curr_idx = create_stage( curr_idx, to_reduce )
+        reduced_ops, curr_idx = create_stage_ternary( curr_idx, to_reduce )
         curr_idxs = [ ( x[0], curr_d + 1, True )  for x in reduced_ops ] + reserves
         op_list += reduced_ops
         curr_d += 1
@@ -421,9 +421,8 @@ def verify_tree( fname ):
     return True
     
 if __name__ == "__main__":
-    conv_idx = int( sys.argv[1] )
-    fname_out = "../resources/conv" + str(conv_idx)
-    fname = fname_out + "_weights.csv"
+    fname = sys.argv[1]
+    fname_out = fname.split("_weights.csv")[0].split(".csv")[0]
     # fname_out = "../resources/mat" + str(conv_idx)
     # fname = fname_out + ".csv"
     # fname = "../resources/fc_1024_weights.csv"
