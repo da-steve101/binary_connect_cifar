@@ -28,6 +28,8 @@ dense => 1024x10
 
 # Running
 The complete verilog, including constraints is included in all_code.tgz
+An IP block is also available in sydney.edu.au_AWS_VGG_AWSVggWrapper_with_dense_1.0.zip and sydney.edu.au_AWS_VGG_AWSVggWrapper_no_dense_1.0.zip
+The complete network with dense layers did not fit on the FPGA, so the IP core without them is included as well
 To generate, run the script generate.sh, note however it takes a long time (8hrs+) and alot of memory (250GB)
 
 # FPGA version
