@@ -10,7 +10,8 @@ class SparseMatMulSerial(
   val treeDefinition : Seq[Seq[Int]],
   val outputIdxs : Seq[Int],
   val bitWidth : Int,
-  val fanout : Int = 0
+  val fanout : Int = 0,
+  val srOut : Int = 1
 ) extends Module {
 
   val noInputs = treeDefinition.head.head
@@ -105,6 +106,7 @@ class SparseMatMulSerial(
     Predef.assert( ( op(2) < 0 || nodeDelays( op(1) ) == nodeDelays( op(2) ) ) &&
       ( op(3) < 0 || nodeDelays( op(1) ) == nodeDelays( op(3) ) ),
       "Tree adds values from different layers for op: " + op )
+    Predef.assert( op(0) >= 0 && op(1) >= 0, "Invalid op " + op )
     nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
     if ( startRegs.size <= nodeDelays( op(0) ) + 1 )
       startRegs.append( RegNext( startRegs.last ) )
@@ -145,7 +147,6 @@ class SparseMatMulSerial(
     outReg.reverse.reduce( _ ## _ ).asTypeOf( dtype )
   })
 
-  val srOut = 1
   val latency = treeLatency + 2 + nIter - 1 + srOut
 
   io.dataOut.bits := ShiftRegister( Vec( unnibble ), srOut )
