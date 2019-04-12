@@ -40,7 +40,7 @@ class SSILayer[T <: Bits]( val dtype : T, val tPutIn : Int, val tPutOut : Int ) 
     val srvld = RegInit( 0.U( ratioIn.W ) )
     srvld := srvld << 1
     when ( io.dataIn.valid ) {
-      srvld := ( ( 1 << ratioIn ) - 1 ).U
+      srvld := ( ( BigInt(1) << ratioIn ) - 1 ).U
     }
     io.dataOut.valid := srvld( ratioIn - 1 )
   } else {

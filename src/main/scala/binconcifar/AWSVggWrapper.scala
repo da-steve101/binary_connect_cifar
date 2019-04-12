@@ -6,6 +6,7 @@ import chisel3.util._
 import binconcifar.MuxLayer
 import binconcifar.DenseLayer
 import binconcifar.DenseScale
+import binconcifar.SSILayer
 import collection.mutable.ArrayBuffer
 
 private class Vgg7( dtype : SInt ) extends Module {
@@ -62,7 +63,7 @@ class AWSVggWrapper extends Module {
   for ( i <- 0 until vgg.io.dataOut.bits.size )
     sintOut( vgg.io.dataOut.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
 
-  val muxLyr = Module( new MuxLayer( dtype, 256, 4 ) )
+  val muxLyr = Module( new SSILayer( dtype, 256, 4 ) ) //new MuxLayer( dtype, 256, 4 ) )
   muxLyr.io.dataIn.bits := sintOut
   muxLyr.io.dataIn.valid := queueIOOut.valid
   queueIOOut.ready := muxLyr.io.dataIn.ready
@@ -74,7 +75,8 @@ class AWSVggWrapper extends Module {
   val dense = Module( new DenseLayer( dtype, 4, weights_fc ) )
   dense.io.dataIn <> muxLyr.io.dataOut
 
-  val muxLyr_2 = Module( new MuxLayer( dtype, 1024, 1 ) )
+  // val muxLyr_2 = Module( new MuxLayer( dtype, 1024, 1 ) )
+  val muxLyr_2 = Module( new SSILayer( dtype, 128, 1 ) )
   muxLyr_2.io.dataIn <> dense.io.dataOut
   dense.io.dataOut.ready := true.B // should always be ready ...
 

@@ -81,7 +81,7 @@ initial begin
    // start sending data
    while ( 1 == 1 )
      begin
-	vld_in = ( $urandom % 5 ) > 0; // use 1 to measure latency
+	vld_in = 1; // ( $urandom % 5 ) > 0; // use 1 to measure latency
 	#4;
      end
 end

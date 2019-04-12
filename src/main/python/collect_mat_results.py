@@ -23,16 +23,13 @@ def get_perf_mat( fname ):
     for o in outputs:
         if o > -1:
             reg_count += ( max_depth - logic_depths[o] )
-    return add_count, reg_count, add_count + reg_count
+    return add_count, reg_count, add_count + reg_count, max_depth
 
 if __name__ == "__main__":
     fnames = sys.argv[1:]
     res = [ get_perf_mat(f) for f in fnames ]
     for f, r in zip( fnames, res ):
-        print( f )
-        print( "adds", r[0] )
-        print( "regs", r[1] )
-        print( "pag", r[2] )
+        print( f, r[3], r[2], r[1], r[0], r[2] )
     print( "avg add", sum( [ r[0] for r in res ] )/len(res) )
     print( "avg reg", sum( [ r[1] for r in res ] )/len(res) )
     print( "avg pag", sum( [ r[0]+r[1] for r in res ] )/len(res) )

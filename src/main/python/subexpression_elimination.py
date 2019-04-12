@@ -276,8 +276,8 @@ def create_ops_for_tree( curr_idx, curr_idxs ):
     while len(reserves) > 0 or len(curr_idxs) > 1 or len(op_list) < 1:
         reserves = [ x for x in curr_idxs if x[1] > curr_d ]
         to_reduce = [ x for x in curr_idxs if x[1] <= curr_d ]
-        # reduced_ops, curr_idx = create_stage( curr_idx, to_reduce )
-        reduced_ops, curr_idx = create_stage_ternary( curr_idx, to_reduce )
+        reduced_ops, curr_idx = create_stage( curr_idx, to_reduce )
+        # reduced_ops, curr_idx = create_stage_ternary( curr_idx, to_reduce )
         curr_idxs = [ ( x[0], curr_d + 1, True )  for x in reduced_ops ] + reserves
         op_list += reduced_ops
         curr_d += 1
@@ -301,8 +301,6 @@ def get_dependancies( idxs, matrix, no_in, no_out ):
 def make_tree( matrix, no_in, no_out ):
     dependancies = {}
     output_depths = {}
-    # for j, row in enumerate([ abs( matrix[:,i] ) for i in range( matrix.shape[1] ) ]):
-    #    dependancies[j] = list(np.nonzero( row[no_in:] )[0] + no_out)
     for j in range( no_out ):
         idxs = list( np.nonzero( matrix[no_in:,j] )[0] + no_out )
         dependancies[j] = idxs
@@ -311,7 +309,7 @@ def make_tree( matrix, no_in, no_out ):
     outputs = {}
     op_list = []
     op_idx = no_in
-    while len( outputs ) < len(dependancies): #matrix.shape[1]:
+    while len( outputs ) < len(dependancies):
         for x in dependancies:
             if x not in outputs: # haven't already done
                 # check all dependancies are resolved otherwise skip for now
@@ -375,6 +373,7 @@ def write_output( fname, matrix, initial_no_adds, no_in, no_out ):
     for x in tree_ops:
         tmp = wrt.writerow( x )
     f_out.close()
+    remove_negate_ops( fname )
     verify_tree( fname )
 
 def compute_op( a, b, c, op_code ):
@@ -393,6 +392,34 @@ def compute_op( a, b, c, op_code ):
     if op_code == 6:
       return a + b - c
     return a + b + c
+
+def remove_negate_ops( fname ):
+    f = open( fname + "_tern_op_list.csv" )
+    rdr = csv.reader( f )
+    data = [ x for x in rdr ]
+    f.close()
+    f_out = open( fname + "_tern_op_list.csv", "w" )
+    wrt = csv.writer( f_out )
+    negate_ops = set([])
+    output_idxs = data[0]
+    wrt.writerow( output_idxs )
+    output_idxs = set( [ int(x) for x in output_idxs ] )
+    for x in data[1:]:
+        new_row = x
+        op_code = int( x[4] )
+        if int( x[1] ) in negate_ops:
+            op_code = ( op_code + 4 ) % 8
+        if int( x[2] ) in negate_ops:
+            op_code = ( ( op_code + 2 ) % 4 ) + 4*( op_code >> 2 )
+        if int( x[3] ) in negate_ops:
+            op_code = ( ( op_code + 1 ) % 2 ) + 2*( op_code >> 1 )
+        new_row[4] = str( op_code )
+        is_neg = op_code == 0 or ( int(x[3]) < 0 and op_code < 2 )
+        if is_neg and int( x[0] ) not in output_idxs:
+            negate_ops.add( int(x[0]) )
+            new_row[4] = str( 7 - op_code )
+        wrt.writerow( new_row )
+    f_out.close()
 
 def verify_tree( fname ):
     matrix, no_in, no_out, initial_no_adds = get_matrix( fname + "_weights.csv" )
