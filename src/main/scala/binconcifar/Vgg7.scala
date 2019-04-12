@@ -252,6 +252,6 @@ class Vgg7( dtype : SInt ) extends Module {
   val mp3 = createPoolLyr( lyr6Rev, tPutPart3Int, imgSizePart3, ( 2, 2, 256 ) )
   // val ssi4 = SSIChange( mp3, 256, 8 ) // can only do 2 without another buffer
 
-  io.dataOut <> ssi4
+  io.dataOut <> mp3 //ssi4
 
 }
