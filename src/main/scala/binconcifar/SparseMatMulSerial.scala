@@ -43,7 +43,7 @@ class SparseMatMulSerial(
   val dataInBits = Fanout( io.dataIn.bits, 3, noFanout.toList )
   for ( i <- 0 until noInputs )
     noFanout( i ) = 0
-  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 2, false.B, true.B )
+  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, 2 )
 
   val startRegs = ArrayBuffer[Bool]()
   startRegs.append( startReg0 )
@@ -57,11 +57,6 @@ class SparseMatMulSerial(
   for ( i <- 0 until noNodes )
     treeNodes( i ) := 0.U( 4.W )
 
-  // connect inputs
-  /*
-  for ( d <- dataInBits.zipWithIndex )
-    treeNodes( d._2 ) := d._1
-   */
   def compute_op( op_code : Int, a : UInt, b : UInt, start : Bool ) : UInt = {
     if ( op_code == 0 || op_code == 1 )
       return SerialAdder.negate( a, b, start, bitWidth )._1
@@ -132,26 +127,24 @@ class SparseMatMulSerial(
       ShiftRegister( x._1, treeLatency - x._2 )
   })
 
+  val num_vld = ShiftRegister( io.dataIn.valid, treeLatency + 3, false.B, true.B )
   val nibCntr = RegInit( 0.U( log2Iter.W ) )
-  when ( startRegs.last || nibCntr > 0.U ) {
+  when ( num_vld || nibCntr > 0.U ) {
     nibCntr := nibCntr + 1.U
   }
 
   val unnibble = outputsAligned.map( x => {
     val outReg = Reg( Vec( nIter, 0.U( bitWidth.W ).cloneType ) )
-    for ( i <- 0 until nIter ) {
-      when ( nibCntr === i.U ) {
-        outReg( i ) := x
-      }
-    }
-    outReg.reverse.reduce( _ ## _ ).asTypeOf( dtype )
+    outReg( 0 ) := x
+    for ( i <- 1 until nIter )
+      outReg( i ) := outReg( i - 1 )
+    outReg.reduce( _ ## _ ).asTypeOf( dtype )
   })
 
   val latency = treeLatency + 2 + nIter - 1 + srOut
 
   io.dataOut.bits := ShiftRegister( Vec( unnibble ), srOut )
 
-  val vld = ShiftRegister( nibCntr === ( nIter - 1 ).U, srOut + 1, false.B, true.B )
+  val vld = ShiftRegister( num_vld && nibCntr === 0.U, nIter + srOut, false.B, true.B )
   io.dataOut.valid := vld
-
 }
