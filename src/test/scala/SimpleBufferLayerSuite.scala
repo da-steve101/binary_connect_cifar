@@ -132,7 +132,7 @@ class SimpleBufferLayerSuite extends ChiselFlatSpec {
   val grpSizes = List( 1, 2, 3, 5, 8 )
   val qSize = 10
   val tPuts = List( 1 ) //, 2, 4, 8 )
-  val convImgComb = List( ( 2, 2, 32, false, true ), ( 3, 1, 32, true, false ), ( 3, 1, 32, true, true ) )
+  val convImgComb = List( ( 2, 2, 32, false, true ) ) // , ( 3, 1, 32, true, false ), ( 3, 1, 32, true, true ) )
   backends foreach {backend =>
     it should s"buffer inputs on a layer using $backend" in {
       for ( grpSize <- grpSizes ) {

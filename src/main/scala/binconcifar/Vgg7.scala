@@ -235,7 +235,7 @@ class Vgg7( dtype : SInt ) extends Module {
   val mp2 = createPoolLyr( lyr4Rev, tPutPart2Int, imgSizePart2, ( 2, 2, 128 ) )
   val ssi2 = SSIChange( mp2, 128, 16 ) // can only do 2 without another buffer
 
-  //io.dataOut <> ssi2
+  // io.dataOut <> ssi2
 
   val tPutPart3 = tPutPart2 / 4
   val tPutPart3Int = math.max( tPutPart3, 1 ).toInt
@@ -250,8 +250,7 @@ class Vgg7( dtype : SInt ) extends Module {
   val lyr6 = createSparseMulLyr( 6, ssi3, tPutPart3, imgSizePart3, 256, 256, 3, 2, noFifo = true, bfr_reg = 2 )
   val lyr6Rev = reverseOrder( lyr6, tPutPart3Int )
   val mp3 = createPoolLyr( lyr6Rev, tPutPart3Int, imgSizePart3, ( 2, 2, 256 ) )
-  // val ssi4 = SSIChange( mp3, 256, 8 ) // can only do 2 without another buffer
 
-  io.dataOut <> mp3 //ssi4
+  io.dataOut <> mp3
 
 }

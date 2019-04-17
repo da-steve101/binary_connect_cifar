@@ -81,7 +81,7 @@ class ComparisonModule extends Module {
 
   // reorder bits in to match triconvsum
   val modOrder = Vec( cmLyr.io.dataOut.bits.grouped(inSize).toList.reverse.reduce( _ ++ _ ) )
-  conv_s.io.dataIn.bits := modOrder
+  conv_s.io.dataIn.bits := modOrder //Vec( modOrder.map( _.asSInt ) )
   conv_s.io.dataIn.valid := cmLyr.io.dataOut.valid
   conv_orig.io.dataIn <> bfLyr.io.dataOut
 
@@ -108,9 +108,9 @@ class ComparisonTests( c : ComparisonModule ) extends PeekPokeTester( c ) {
   }
 
   val img = ( 0 until cycs ).toList.map( x => {
-    // List.fill( c.inSize * 3 * 3 ) { getRndFP() }
+    List.fill( c.inSize * 3 * 3 ) { getRndFP() }
     // List.fill( 1 ) { BigInt(1) } ++ List.fill( c.inSize - 1 ){ BigInt(0) }
-    List.fill( c.inSize ) { BigInt( x % 128 ) }
+    // List.fill( c.inSize ) { BigInt( x % 32 ) }
   })
 
   val sparse_res = ArrayBuffer[List[BigInt]]()
@@ -135,20 +135,19 @@ class ComparisonTests( c : ComparisonModule ) extends PeekPokeTester( c ) {
     }
 
     val data_s_vld = peek( c.io.dataOut_s.valid ) == 1
-    // val dataOut_s = ( 0 until c.outSize ).map( i => peek( c.io.dataOut_s.bits( i ) ) )
     val dataOut_s = ( 0 until c.outSize ).map( i => peek( c.io.dataOut_s.bits( i ) ) )
+    val checkLen = c.outSize
     if ( data_s_vld ) {
       if ( sparse_res.size < orig_res.size ) {
-        for ( i <- 0 until c.outSize )
+        for ( i <- 0 until checkLen )
           expect( c.io.dataOut_s.bits(i), orig_res( sparse_res.size )( i ) )
       }
-      // val dataOut_s = ( 0 until c.outSize ).map( i => peek( c.io.dataOut_s.bits( i ) ) )
       sparse_res += dataOut_s.toList
     }
     val data_orig_vld = peek( c.io.dataOut_orig.valid ) == 1
     if ( data_orig_vld ) {
       if ( sparse_res.size > orig_res.size ) {
-        for ( i <- 0 until c.outSize )
+        for ( i <- 0 until checkLen )
           expect( c.io.dataOut_orig.bits(i), sparse_res( orig_res.size )( i ) )
       }
       val dataOut_orig = ( 0 until c.outSize ).map( i => peek( c.io.dataOut_orig.bits( i ) ) )

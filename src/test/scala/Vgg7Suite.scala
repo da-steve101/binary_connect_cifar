@@ -22,11 +22,12 @@ class Vgg7Tests( c : Vgg7 ) extends PeekPokeTester( c ) {
     BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
   }) ).grouped( c.imgSize ).toList
 
+  // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_conv1_relu.csv")
   // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_mp_2.csv")
   val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_mp_1.csv")
   // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_conv2_relu.csv")
   // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_conv2_act.csv")
-  // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/airplane4_conv1_relu.csv")
+  // val bufferedSource_2 = scala.io.Source.fromFile("src/main/resources/img_0_conv1_relu.csv")
   val conv_res_raw = bufferedSource_2.getLines.toList
   val convRes = conv_res_raw.map( _.split(",").toList.map( x => {
     BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
@@ -36,7 +37,7 @@ class Vgg7Tests( c : Vgg7 ) extends PeekPokeTester( c ) {
   var imgCol = 0
   var convCount = 0
   for ( cyc <- 0 until cycs ) {
-    val vld = myRand.nextInt(4) != 0
+    val vld = true // myRand.nextInt(4) != 0
     poke( c.io.dataOut.ready, true )
     poke( c.io.dataIn.valid, vld )
     for ( i <- 0 until c.noIn ) {
@@ -70,7 +71,7 @@ class Vgg7Suite extends ChiselFlatSpec {
   behavior of "Vgg7Suite"
   backends foreach {backend =>
     it should s"correctly compute the convolution $backend" in {
-      Driver(() => { new Vgg7( SInt( 16.W ) )  }, "verilator", false )( c =>
+      Driver(() => { new Vgg7( SInt( 16.W ) )  }, "verilator", true )( c =>
         new Vgg7Tests( c ) ) should be (true)
     }
   }

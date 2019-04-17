@@ -35,7 +35,7 @@ class AWSVggWrapper extends Module {
 
   val io = IO( new Bundle {
     val dataIn = Flipped(Decoupled( Vec( 3, dtype ) ))
-    val dataOut = Decoupled( Vec( 1, dtype ) )
+    val dataOut = Decoupled( Vec( 10, dtype ) )
   })
 
   // just add a reg on input as don't have IO
@@ -63,7 +63,7 @@ class AWSVggWrapper extends Module {
   for ( i <- 0 until vgg.io.dataOut.bits.size )
     sintOut( vgg.io.dataOut.bits.size - i - 1 ) := queueIOOut.bits((i+1)*dtypeWidth - 1, i*dtypeWidth).asSInt()
 
-  val muxLyr = Module( new SSILayer( dtype, 256, 4 ) ) //new MuxLayer( dtype, 256, 4 ) )
+  val muxLyr = Module( new MuxLayer( dtype, 256, 4 ) )
   muxLyr.io.dataIn.bits := sintOut
   muxLyr.io.dataIn.valid := queueIOOut.valid
   queueIOOut.ready := muxLyr.io.dataIn.ready
@@ -97,6 +97,16 @@ class AWSVggWrapper extends Module {
 
   dense_2.io.dataOut.ready := true.B // just set as true as should always be ready ...
   val outputRegs = Reg( dense_2.io.dataOut.bits.cloneType )
+
+  io.dataOut.bits := outputRegs
+  val vldReg = RegInit( false.B )
+  vldReg := false.B
+  io.dataOut.valid := vldReg
+  when ( dense_2.io.dataOut.valid ) {
+    outputRegs := dense_2.io.dataOut.bits
+    vldReg := true.B
+  }
+  /*
   val outCntr = RegInit( 0.U( 4.W ) )
   io.dataOut.valid := false.B
   when ( dense_2.io.dataOut.valid ) {
@@ -111,5 +121,6 @@ class AWSVggWrapper extends Module {
     outCntr := 0.U
   }
   io.dataOut.bits(0) := outputRegs( outCntr - 1.U ) // NB: no need to mult scaling factor into softmax
+   */
   // muxLyr.io.dataOut <> io.dataOut
 }

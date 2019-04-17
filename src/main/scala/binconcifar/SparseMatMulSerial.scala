@@ -11,7 +11,8 @@ class SparseMatMulSerial(
   val outputIdxs : Seq[Int],
   val bitWidth : Int,
   val fanout : Int = 0,
-  val srOut : Int = 1
+  val srOut : Int = 1,
+  val srIn : Int = 2
 ) extends Module {
 
   val noInputs = treeDefinition.head.head
@@ -32,20 +33,8 @@ class SparseMatMulSerial(
   when ( nibbleCntr > 0.U || io.dataIn.valid ) {
     nibbleCntr := nibbleCntr + 1.U
   }
-  // calculate the number needed to fanout ...
-  val noFanout = ArrayBuffer.fill( noInputs ) { 0 }
-  for ( op <- treeDefinition ) {
-    for ( i <- List( 1, 2 ) ) {
-      if ( op(i) >= 0 && op(i) < noInputs )
-        noFanout(op(i)) = noFanout(op(i)) + 1
-    }
-  }
-  val fanoutLatency = 2
-  // val dataInBits = Fanout( io.dataIn.bits, fanoutLatency, noFanout.toList )
-  val dataInBits = ShiftRegister( io.dataIn.bits, fanoutLatency )
-  for ( i <- 0 until noInputs )
-    noFanout( i ) = 0
-  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, fanoutLatency - 1 )
+  val dataInBits = ShiftRegister( io.dataIn.bits, srIn )
+  val startReg0 = ShiftRegister( nibbleCntr === 0.U && io.dataIn.valid, srIn - 1 )
 
   val startRegs = ArrayBuffer[Bool]()
   startRegs.append( startReg0 )
@@ -72,19 +61,16 @@ class SparseMatMulSerial(
   def get_shift_val( op_idx : Int, shift_no : Int ) : UInt = {
     if ( op_idx < 0 )
       return 0.U
-    val start = startRegs( nodeDelays( op_idx ) )
     val a = {
-      if ( op_idx < noInputs ) {
-        noFanout( op_idx ) = noFanout( op_idx ) + 1
-        // dataInBits( op_idx )( noFanout( op_idx ) - 1 )
+      if ( op_idx < noInputs )
         dataInBits( op_idx )
-      } else {
+      else
         treeNodes( op_idx )
-      }
     }
     if ( shift_no == 0 )
       return a
     if ( shift_no > 0 ) {
+      val start = startRegs( nodeDelays( op_idx ) )
       val prevBits = Reg( 0.U( shift_no.W ).cloneType )
       prevBits := a( bitWidth - 1, bitWidth - shift_no )
       val outputBits = Wire( 0.U( bitWidth.W ).cloneType )
@@ -106,13 +92,12 @@ class SparseMatMulSerial(
       "Tree adds values from different layers for op: " + op )
     Predef.assert( op(0) >= 0 && op(1) >= 0, "Invalid op " + op )
     nodeDelays( op(0) ) = nodeDelays( op(1) ) + 1
-    if ( startRegs.size <= nodeDelays( op(0) ) + 1 )
+    while ( startRegs.size <= nodeDelays( op(0) ) + 1 )
       startRegs.append( RegNext( startRegs.last ) )
     val a = get_shift_val( op(1), op(5) )
     val b = get_shift_val( op(2), op(6) )
-    treeNodes( op(0) ) := {
-      compute_op( op(4), a, b, startRegs( nodeDelays( op(0) ) - 1 ) )
-    }
+    val op_res = compute_op( op(4), a, b, startRegs( nodeDelays( op(1) ) ) )
+    treeNodes( op(0) ) := op_res // RegNext( op_res )
   }
   val outputs = outputIdxs.map( i => {
     if ( i < 0 )
@@ -130,7 +115,7 @@ class SparseMatMulSerial(
       ShiftRegister( x._1, treeLatency - x._2 )
   })
 
-  val num_vld = ShiftRegister( io.dataIn.valid, treeLatency + fanoutLatency, false.B, true.B )
+  val num_vld = ShiftRegister( io.dataIn.valid, treeLatency + srIn, false.B, true.B )
   val nibCntr = RegInit( 0.U( log2Iter.W ) )
   when ( num_vld || nibCntr > 0.U ) {
     nibCntr := nibCntr + 1.U
@@ -144,7 +129,7 @@ class SparseMatMulSerial(
     outReg.reduce( _ ## _ ).asTypeOf( dtype )
   })
 
-  val latency = treeLatency + nIter + srOut + fanoutLatency
+  val latency = treeLatency + nIter + srOut + srIn
 
   io.dataOut.bits := ShiftRegister( Vec( unnibble ), srOut )
 
