@@ -12,13 +12,13 @@ class Vgg7( dtype : SInt ) extends Module {
   val tPutPart1Int = math.max( tPut, 1 ).toInt
   val tPutOut = 1 //tPut / 4
   val imgSize = 32
-  val imgOutSize = imgSize / 2
+  val imgOutSize = imgSize / 8
   // val dtype = SInt( 16.W )
   // type T = dtype.type
   val fracBits = 4
   val abFracBits = 6
   val inGrp = 3
-  val noOut = 64
+  val noOut = 256
   val latency = 32 // just some bs for now
   val noIn = tPutPart1Int
 
@@ -217,10 +217,10 @@ class Vgg7( dtype : SInt ) extends Module {
   val lyr2 = createSparseMulLyr( 2, lyr1Rev, tPut, imgSize, 64, 64, 3, 0, "conv", true )
   val lyr2Rev = reverseOrder( lyr2, tPutPart1Int )
   val mp1 = createPoolLyr( lyr2Rev, tPutPart1Int, imgSize, ( 2, 2, 64 ) )
-  val ssi1 = SSIChange( mp1, 64, 32 ) // can only do 2 without another buffer
+  // val ssi1 = SSIChange( mp1, 64, 32 ) // can only do 2 without another buffer
 
-  io.dataOut <> ssi1
-/*
+  // io.dataOut <> ssi1
+
   val tPutPart2 = tPut / 4
   val tPutPart2Int = math.max( tPutPart2, 1 ).toInt
   val mp1Rev = reverseOrder( ssi1, tPutPart2Int )
@@ -233,9 +233,9 @@ class Vgg7( dtype : SInt ) extends Module {
   val lyr4 = createSparseMulLyr( 4, lyr3Rev, tPutPart2, imgSizePart2, 128, 128, 3, 2, noFifo = true, bfr_reg = 2 )
   val lyr4Rev = reverseOrder( lyr4, tPutPart2Int )
   val mp2 = createPoolLyr( lyr4Rev, tPutPart2Int, imgSizePart2, ( 2, 2, 128 ) )
-  val ssi2 = SSIChange( mp2, 128, 16 ) // can only do 2 without another buffer
+  // val ssi2 = SSIChange( mp2, 128, 16 ) // can only do 2 without another buffer
 
-  // io.dataOut <> ssi2
+  io.dataOut <> ssi2
 
   val tPutPart3 = tPutPart2 / 4
   val tPutPart3Int = math.max( tPutPart3, 1 ).toInt
@@ -246,11 +246,11 @@ class Vgg7( dtype : SInt ) extends Module {
   val lyr5 = createSparseMulLyr( 5, mp2Rev, tPutPart3, imgSizePart3, 256, 128, 3, 2, bfr_reg = 2  )
   val lyr5Rev = reverseOrder( lyr5, tPutPart3Int )
   // val lyr6 = createConvLyr( 6, lyr5Rev, tPutPart3, imgSizePart3, 256, ( 3, 3, 256 ), 2 )
-  val ssi3 = SSIChange( lyr5Rev, 256, 16 ) // can only do 2 without another buffer
+  // val ssi3 = SSIChange( lyr5Rev, 256, 16 ) // can only do 2 without another buffer
   val lyr6 = createSparseMulLyr( 6, ssi3, tPutPart3, imgSizePart3, 256, 256, 3, 2, noFifo = true, bfr_reg = 2 )
   val lyr6Rev = reverseOrder( lyr6, tPutPart3Int )
   val mp3 = createPoolLyr( lyr6Rev, tPutPart3Int, imgSizePart3, ( 2, 2, 256 ) )
 
   io.dataOut <> mp3
-*/
+
 }
