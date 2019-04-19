@@ -12,13 +12,13 @@ class Vgg7( dtype : SInt ) extends Module {
   val tPutPart1Int = math.max( tPut, 1 ).toInt
   val tPutOut = 1 //tPut / 4
   val imgSize = 32
-  val imgOutSize = imgSize / 8
+  val imgOutSize = imgSize / 2
   // val dtype = SInt( 16.W )
   // type T = dtype.type
   val fracBits = 4
   val abFracBits = 6
   val inGrp = 3
-  val noOut = 256
+  val noOut = 64
   val latency = 32 // just some bs for now
   val noIn = tPutPart1Int
 
@@ -219,8 +219,8 @@ class Vgg7( dtype : SInt ) extends Module {
   val mp1 = createPoolLyr( lyr2Rev, tPutPart1Int, imgSize, ( 2, 2, 64 ) )
   val ssi1 = SSIChange( mp1, 64, 32 ) // can only do 2 without another buffer
 
-  // io.dataOut <> ssi1
-
+  io.dataOut <> ssi1
+/*
   val tPutPart2 = tPut / 4
   val tPutPart2Int = math.max( tPutPart2, 1 ).toInt
   val mp1Rev = reverseOrder( ssi1, tPutPart2Int )
@@ -252,5 +252,5 @@ class Vgg7( dtype : SInt ) extends Module {
   val mp3 = createPoolLyr( lyr6Rev, tPutPart3Int, imgSizePart3, ( 2, 2, 256 ) )
 
   io.dataOut <> mp3
-
+*/
 }

@@ -15,21 +15,21 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
 
   println( "c.noOut = " + c.noOut )
 
-  // val bufferedSource_img = scala.io.Source.fromFile("src/main/resources/airplane4_mp_3.csv")
-  // val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_fc_1024_preBN.csv")
-  val bufferedSource_img = scala.io.Source.fromFile("src/main/resources/airplane4_fc1024.csv" )
-  val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_sm10.csv")
+  val bufferedSource_img = scala.io.Source.fromFile("src/main/resources/airplane4_mp_3.csv")
+  val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_fc_1024_preBN.csv")
+  // val bufferedSource_img = scala.io.Source.fromFile("src/main/resources/airplane4_fc1024.csv" )
+  // val bufferedSource_out = scala.io.Source.fromFile("src/main/resources/airplane4_sm10.csv")
 
   val img_raw = bufferedSource_img.getLines.toList
 
-  /*
   val img = img_raw.map( _.split(",").toList.map( x => {
     BigInt(( x.toFloat * ( 1 << c.fracBits ) ).toInt)
-  }) ).grouped( 4 ).toList
-   */
+  }) ).toList
+  /*
   val img = img_raw.head.split( "," ).toList.map( x => {
     BigInt(math.round( x.toFloat * ( 1 << c.fracBits ) ).toInt)
   })
+   */
 
   val dense_raw = bufferedSource_out.getLines.toList.head
   val dense_res = dense_raw.split(",").toList.map( x => {
@@ -44,7 +44,7 @@ class DenseComputeTests( c : DenseLayer ) extends PeekPokeTester( c ) {
     val vld = myRand.nextInt(4) != 0
     poke( c.io.dataIn.valid, vld )
     for ( i <- 0 until c.tPut ) {
-      poke( c.io.dataIn.bits( i ), img( imgIdx ) )
+      poke( c.io.dataIn.bits( i ), img( imgIdx / 256 )( imgIdx % 256 ) )
       imgIdx += 1
     }
     if ( vld ) {
@@ -81,7 +81,7 @@ class DenseLayerSuite extends ChiselFlatSpec {
   val weights_raw_fc = bufferedSource_weights_fc.getLines.toList
   val weights_fc = weights_raw_fc.map( _.split(",").toList.map( x => x.toInt ).toList ).transpose
 
-  val weights = weights_sm
+  val weights = weights_fc
 
   println( "weights.size = " + weights.size )
   println( "weights.head.size = " + weights.head.size )

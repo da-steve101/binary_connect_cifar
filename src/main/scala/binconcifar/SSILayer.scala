@@ -24,17 +24,20 @@ class SSILayer[T <: Bits]( val dtype : T, val tPutIn : Int, val tPutOut : Int ) 
   if ( tPutIn >= tPutOut ) {
     for ( i <- 1 until ratioIn ) {
       for ( j <- 0 until tPutOut )
-        buffer(i*tPutOut + j ) := buffer((i-1)*tPutOut + j )
+        // buffer(i*tPutOut + j ) := buffer((i-1)*tPutOut + j )
+        buffer((i-1)*tPutOut + j ) := buffer(i*tPutOut + j )
     }
   } else {
     for ( i <- 1 until ratioOut ) {
       for ( j <- 0 until tPutIn )
-        buffer(i*tPutIn + j ) := buffer((i-1)*tPutIn + j )
+        // buffer(i*tPutIn + j ) := buffer((i-1)*tPutIn + j )
+        buffer((i-1)*tPutIn + j ) := buffer(i*tPutIn + j )
     }
   }
   when ( io.dataIn.valid ) {
     for ( i <- 0 until tPutIn )
-      buffer(i) := io.dataIn.bits(i)
+      // buffer( i) := io.dataIn.bits(i)
+      buffer( bufLen - tPutIn + i ) := io.dataIn.bits(i)
   }
   if ( tPutIn >= tPutOut ) {
     val srvld = RegInit( 0.U( ratioIn.W ) )
@@ -54,5 +57,6 @@ class SSILayer[T <: Bits]( val dtype : T, val tPutIn : Int, val tPutOut : Int ) 
 
   io.dataIn.ready := true.B
   for ( i <- 0 until tPutOut )
-    io.dataOut.bits(tPutOut - i - 1) := buffer( bufLen - i - 1 )
+    // io.dataOut.bits(tPutOut - i - 1) := buffer( bufLen - i - 1 )
+    io.dataOut.bits( i ) := buffer( i )
 }

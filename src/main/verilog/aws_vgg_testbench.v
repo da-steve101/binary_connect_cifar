@@ -15,10 +15,9 @@ wire [15:0] airplane4_pred [9:0] = { 16'hff88, 16'hff36, 16'hfd98, 16'hfbf9, 16'
    wire [15:0] bits_in_2;
    reg 	       rdy_out;
    wire        vld_out;
-   wire [15:0] bits_out_0;
+   wire [15:0] bits_out [9:0];
 
    reg [9:0]   img_cntr;
-   reg [4:0]   out_cntr;
    wire        bits_out_0_correct;
    wire [47:0] curr_pixel;
    assign curr_pixel = airplane4_image[img_cntr];
@@ -26,7 +25,7 @@ wire [15:0] airplane4_pred [9:0] = { 16'hff88, 16'hff36, 16'hfd98, 16'hfbf9, 16'
    assign bits_in_0 = curr_pixel[15:0];
    assign bits_in_1 = curr_pixel[31:16];
    assign bits_in_2 = curr_pixel[47:32];
-   assign bits_out_0_correct = ( bits_out_0 == airplane4_pred[out_cntr] );
+   assign bits_out_0_correct = ( bits_out == airplane4_pred );
    
    /* Instantiation of top level design */
    AWSVggWrapper
@@ -40,7 +39,16 @@ wire [15:0] airplane4_pred [9:0] = { 16'hff88, 16'hff36, 16'hfd98, 16'hfbf9, 16'
 	  .io_dataIn_bits_2( bits_in_2 ),
 	  .io_dataOut_ready( rdy_out ),
 	  .io_dataOut_valid( vld_out ),
-	  .io_dataOut_bits_0( bits_out_0 )
+	  .io_dataOut_bits_0( bits_out[0] ),
+	  .io_dataOut_bits_1( bits_out[1] ),
+	  .io_dataOut_bits_2( bits_out[2] ),
+	  .io_dataOut_bits_3( bits_out[3] ),
+	  .io_dataOut_bits_4( bits_out[4] ),
+	  .io_dataOut_bits_5( bits_out[5] ),
+	  .io_dataOut_bits_6( bits_out[6] ),
+	  .io_dataOut_bits_7( bits_out[7] ),
+	  .io_dataOut_bits_8( bits_out[8] ),
+	  .io_dataOut_bits_9( bits_out[9] )
 	  );
 
 /* Add stimulus here */
@@ -54,14 +62,11 @@ always @(posedge clock)
        end
      if ( vld_out )
        begin
-	  out_cntr <= out_cntr + 1'h1;
-	  if ( out_cntr >= 4'h9 )
+	  if ( bits_out_0_correct )
 	    begin
-	       out_cntr <= 0;
-	    end
-	  if ( !bits_out_0_correct )
-	    begin
-	       $display("Output is incorrect");
+	       $display("ASSERTION PASSED: %h == %h", bits_out[0], airplane4_pred[0]);
+	    end else begin
+	       $display("ASSERTION FAILED: %h == %h", bits_out[0], airplane4_pred[0]);
 	    end
        end
   end
@@ -74,7 +79,6 @@ initial begin
    vld_in = 0;
    rdy_out = 1;
    img_cntr = 0;
-   out_cntr = 0;
    #32
    reset = 0;
    #32

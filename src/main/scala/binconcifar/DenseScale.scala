@@ -25,19 +25,27 @@ class DenseScale(
     scaleCntr := scaleCntr + 1.U
   }
 
+  private val aVec = Module( new DenseBlackBox( List(a), 1, 16 ) )
+  private val bVec = Module( new DenseBlackBox( List(b.map( x => x << convPrec ).toList), 1, 16 ) )
+  aVec.io.readAddr := scaleCntr
+  bVec.io.readAddr := scaleCntr
+  aVec.io.clock := clock
+  bVec.io.clock := clock
+
+  /*
   val aVec = Wire( Vec( a.size, dtype ) )
   val bVec = Wire( Vec( b.size, dtype ) )
   for ( x <- a.zipWithIndex )
     aVec( x._2 ) := x._1.S
   for ( x <- b.zipWithIndex )
     bVec( x._2 ) := ( x._1 << convPrec ).S
-
+   */
   val currAct = Reg( dtype )
-  val currA = Reg( dtype )
-  val currB = Reg( dtype )
+  val currA = Wire( dtype )
+  val currB = Wire( dtype )
   currAct := io.dataIn.bits(0)
-  currA := aVec( scaleCntr )
-  currB := bVec( scaleCntr )
+  currA := aVec.io.out.asSInt
+  currB := bVec.io.out.asSInt
 
   val bDelayed = RegNext( currB )
 

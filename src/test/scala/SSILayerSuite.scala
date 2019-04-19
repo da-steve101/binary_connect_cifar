@@ -29,7 +29,7 @@ class SSILayerTests[T <: Bits]( c : SSILayer[T] ) extends PeekPokeTester( c ) {
     if ( c.tPutOut > c.tPutIn ) {
       val wholeCyc = ( cyc - partCyc )/c.ratioOut
       for ( i <- 0 until c.tPutIn )
-        poke( c.io.dataIn.bits( i ), testImg( ( wholeCyc + 1)*c.tPutOut - ( partCyc + 1 )*c.tPutIn + i ) )
+        poke( c.io.dataIn.bits( i ), testImg( ( wholeCyc)*c.tPutOut + ( partCyc)*c.tPutIn + i ) )
     } else {
       for ( i <- 0 until c.tPutIn )
         poke( c.io.dataIn.bits( i ), testImg( i + cyc*c.tPutIn ) )
@@ -45,7 +45,8 @@ class SSILayerTests[T <: Bits]( c : SSILayer[T] ) extends PeekPokeTester( c ) {
     // peek( c.io.dataOut.bits )
     if ( vldOut ) {
       for ( j <- 0 until c.tPutOut )
-        expect( c.io.dataOut.bits( j ), testImg( ( outIdx + 1 )*c.bufLen - (offsetOut + 1)*c.tPutOut + j ) )
+        // expect( c.io.dataOut.bits( j ), testImg( ( outIdx + 1 )*c.bufLen - (offsetOut + 1)*c.tPutOut + j ) )
+        expect( c.io.dataOut.bits( j ), testImg( ( outIdx)*c.bufLen + (offsetOut)*c.tPutOut + j ) )
       if ( offsetOut + 1 >= c.ratioIn ) {
         offsetOut = 0
         outIdx = outIdx + 1

@@ -75,9 +75,13 @@ class AWSVggWrapper extends Module {
   val dense = Module( new DenseLayer( dtype, 4, weights_fc ) )
   dense.io.dataIn <> muxLyr.io.dataOut
 
-  // val muxLyr_2 = Module( new MuxLayer( dtype, 1024, 1 ) )
+  // val muxLyr_2 = Module( new MuxLayer( dtype, 128, 1 ) )
   val muxLyr_2 = Module( new SSILayer( dtype, 128, 1 ) )
-  muxLyr_2.io.dataIn <> dense.io.dataOut
+  muxLyr_2.io.dataIn.valid := dense.io.dataOut.valid
+  val bitsList = dense.io.dataOut.bits.toList
+  println( bitsList )
+  muxLyr_2.io.dataIn.bits := Vec( bitsList )
+  // muxLyr_2.io.dataIn <> dense.io.dataOut
   dense.io.dataOut.ready := true.B // should always be ready ...
 
   // need a BN scale and shift then relu
