@@ -59,19 +59,19 @@ class MemShiftRegister[T <: Data]( genType : T, val n : Int ) extends Module {
     }
 
     val uintOut = myMem( readAddr )
+    // register without enable for output of BRAM
+    val uintBuf = RegNext( uintOut )
+
     val sintOut = Wire( grpedVec.cloneType )
     for ( i <- 0 until grpedVec.size ) {
-      val b : Bits = uintOut((i+1)*bitWidth - 1, i*bitWidth)
+      val b : Bits = uintBuf((i+1)*bitWidth - 1, i*bitWidth)
       if ( sintOut.head.isInstanceOf[SInt] )
         sintOut( grpedVec.size - i - 1 ) := b.asSInt()
       else
         sintOut( grpedVec.size - i - 1 ) := b
     }
 
-    // register without enable for output of BRAM
-    val sintBuf = RegNext( sintOut )
-
-    io.out := sintBuf
+    io.out := sintOut
   }
 }
 
