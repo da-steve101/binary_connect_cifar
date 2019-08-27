@@ -3,6 +3,8 @@
 This paper creates an FPGA implementation of https://arxiv.org/abs/1605.04711
 It implements a network with half the number of convolutional filters as in this paper achieving 91.9% on CIFAR10
 
+Also checkout our more recent work [here](https://github.com/da-steve101/twn_generator)
+
 # Network architecture
 conv1 => 64x3x3x3
 
