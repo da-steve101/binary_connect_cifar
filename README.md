@@ -37,3 +37,18 @@ To generate, run the script generate.sh, note however it takes a long time (8hrs
 # FPGA version
 There is no I/O included in this script but it targeted the AWS-F1 instance FPGA with part number xcvu9p-flgb2104-2-i
 
+# Citation
+Please cite:
+
+```
+@article{tridgell2019unrolling,
+  title={Unrolling Ternary Neural Networks},
+  author={Tridgell, Stephen and Kumm, Martin and Hardieck, Martin and Boland, David and Moss, Duncan and Zipf, Peter and Leong, Philip HW},
+  journal={ACM Transactions on Reconfigurable Technology and Systems (TRETS)},
+  volume={12},
+  number={4},
+  pages={22},
+  year={2019},
+  publisher={ACM}
+}
+```
